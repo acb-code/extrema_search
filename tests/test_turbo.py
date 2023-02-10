@@ -26,9 +26,19 @@ def test_turbo_init_setup():
 
 
 def test_get_training_samples_in_region():
-    state = NewTurboState(dim=1, batch_size=1, center=torch.tensor([0.5], dtype=dtype),
-                          lb=torch.tensor([0.0], dtype=dtype), ub=torch.tensor([1.0], dtype=dtype))
-    state.train_x = torch.tensor([])
+    state = NewTurboState(dim=1, batch_size=1, center=torch.tensor([0.3], dtype=dtype), length=0.1,
+                          lb=torch.tensor([0.25], dtype=dtype), ub=torch.tensor([0.35], dtype=dtype))
+    state.train_x = torch.tensor([0.2, 0.3, 0.4], dtype=dtype).unsqueeze(-1)
+    state.train_y = torch.tensor([0.4, 0.8, 0.2], dtype=dtype).unsqueeze(-1)
+    assert state.train_x.shape == (3, 1)
+    assert state.train_y.shape == (3, 1)
+    x_in, y_in = state.get_training_samples_in_region()
+    assert x_in.shape == (1, 1)
+    assert y_in.shape == (1, 1)
+    assert x_in == torch.tensor([0.3], dtype=dtype).unsqueeze(-1)
+    assert y_in == torch.tensor([0.8], dtype=dtype).unsqueeze(-1)
+    assert x_in.dtype == torch.double
+    assert y_in.dtype == torch.double
 
 
 
