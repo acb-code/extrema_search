@@ -9,11 +9,9 @@
 #   [2] https://botorch.org/tutorials/turbo_1 (MIT License)
 #
 # Notes:
-#   -The overall approach is from [1], and code here is adapts and modifies code from [2]
+#   -The initial approach is from [1], and code here adapts and modifies code from [2] which in turn adapts [1]
 #   -The code here is simplified to 1-d, adds a local model for inside the trust region, and picks slightly different
 #   parameters for the trust region update process
-#   -There are two implementations for v1 (both are 1D only): deterministic_tead returns only the new x to sample at
-#    while global_tead returns all candidates and scores computed
 
 
 
