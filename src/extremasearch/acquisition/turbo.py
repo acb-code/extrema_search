@@ -77,6 +77,35 @@ class NewTurboState:
             return train_x_tr, train_y_tr
 
 
+def new_update_state(state: NewTurboState, x_train, y_train , y_next):
+    """Update the state of the trust region each iteration"""
+    # check if the last iteration was successful and update attributes
+    if torch.max(y_next) > state.best_value + 1e-3 * math.fabs(state.best_value):
+        state.success_counter += 1
+        state.failure_counter = 0
+    else:
+        state.success_counter = 0
+        state.failure_counter += 1
+    # modify trust region geometry based on success or failure of last step
+    if state.success_counter == state.success_tolerance:  # expand trust region
+        state.length = min(2.0 * state.length, state.length_max)
+        state.success_counter = 0
+    elif state.failure_counter == state.failure_tolerance:  # shrink the trust region
+        state.length /= 2.0
+        state.failure_counter = 0
+    # update the best value seen
+    state.best_value = max(state.best_value, torch.max(y_next).item())
+    # check if the trust region needs to restart
+    if state.length < state.length_min:
+        state.restart_triggered = True
+        state.length = 0.5  # assumes x in [0, 1]
+        print("\nTuRBO restart triggered")
+    # update training data set
+    state.train_x = x_train
+    state.train_y = y_train
+    return state
+
+
 def generate_batch(state: NewTurboState,  # trust region state
                    model: ExactGP,  # GP model
                    x,  # evaluated points on [0,1]
