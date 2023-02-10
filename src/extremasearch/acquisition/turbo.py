@@ -13,6 +13,10 @@
 #   -The code here is simplified to 1-d, adds a local model for inside the trust region, and picks slightly different
 #   parameters for the trust region update process
 
+# imports
+from dataclasses import dataclass
+from typing import Any
 
+# setup
 
-
+# objects

@@ -16,6 +16,7 @@
 #   -There are two implementations for v1 (both are 1D only): deterministic_tead returns only the new x to sample at
 #    while global_tead returns all candidates and scores computed
 
+
 # imports
 import torch
 from botorch.models.gp_regression import ExactGP
@@ -23,9 +24,12 @@ from scipy.stats.qmc import LatinHypercube
 from sklearn.neighbors import NearestNeighbors
 import numpy as np
 
+
+# setup
 dtype = torch.double
 
 
+# objects
 def finite_diff(model):
     """get approx gradient at model training points"""
     # assumes 1d input... see implementation in [3] for update to n-D
