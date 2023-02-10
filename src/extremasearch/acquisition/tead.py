@@ -23,6 +23,9 @@ from scipy.stats.qmc import LatinHypercube
 from sklearn.neighbors import NearestNeighbors
 import numpy as np
 
+dtype = torch.double
+
+
 def finite_diff(model):
     """get approx gradient at model training points"""
     # assumes 1d input... see implementation in [3] for update to n-D
@@ -30,7 +33,7 @@ def finite_diff(model):
     x = model.train_inputs[0].squeeze()
     m = len(x)
     delta_s = torch.zeros(m)
-    for i in range(0,m):
+    for i in range(0, m):
         x_lo = x[i] - h
         if x_lo < 0.0:
             x_lo = torch.DoubleTensor([0.0])
@@ -42,14 +45,16 @@ def finite_diff(model):
         delta_s[i] = (y_hi - y_lo)/(2*h)
     return delta_s
 
+
 def knn(ref, query, k=1):
     """Function to wrap KNN from sklearn for TEAD setup
     assumes 1d input dimension, torch Tensors, ref is training inputs
     query is candidate points, k is number of neighbors
     """
-    knn_ex = NearestNeighbors(n_neighbors=k).fit(ref.squeeze().numpy().reshape(-1,1))
-    dists, indices = knn_ex.kneighbors(query.squeeze().numpy().reshape(-1,1))
+    knn_ex = NearestNeighbors(n_neighbors=k).fit(ref.squeeze().numpy().reshape(-1, 1))
+    dists, indices = knn_ex.kneighbors(query.squeeze().numpy().reshape(-1, 1))
     return dists, indices
+
 
 def global_tead(model: ExactGP, get_all_candidates: bool = False):
     """Function version of initial implementation TEAD adaptive sampling algorithm
@@ -65,29 +70,29 @@ def global_tead(model: ExactGP, get_all_candidates: bool = False):
     num_cands = 2000
     cands = torch.from_numpy(lhs_sampler.random(n=num_cands))
     # calculate nearest neighbors pairings for the candidates
-    dists, inds = knn(x_train,cands)
+    dists, inds = knn(x_train, cands)
     # calculate the weighting
     sample_dists = []
     vals = x_train.numpy()
     for i in range(len(vals)):
         for j in range(len(vals)):
             sample_dists.append(np.linalg.norm(vals[i]-vals[j]))
-    Lmax = max(sample_dists)
-    w = torch.ones(num_cands,1) - dists/Lmax
+    lmax = max(sample_dists)
+    w = torch.ones(num_cands, 1, dtype=dtype) - dists/lmax
     # do taylor series expansions
-    t = torch.zeros(num_cands,1)
-    s = torch.zeros(num_cands,1)
-    res = torch.zeros(num_cands,1)
+    t = torch.zeros(num_cands, 1, dtype=dtype)
+    s = torch.zeros(num_cands, 1, dtype=dtype)
+    res = torch.zeros(num_cands, 1, dtype=dtype)
     for i in range(num_cands):
         g = x_train[inds[i]] - cands[i]
-        t[i,0] = y_train[inds[i]] + grads[inds[i]]*g
-        s[i,0] = model(cands[i]).mean
-        res[i,0] = torch.norm(s[i,0] - t[i,0])
+        t[i, 0] = y_train[inds[i]] + grads[inds[i]]*g
+        s[i, 0] = model(cands[i]).mean
+        res[i, 0] = torch.norm(s[i, 0] - t[i, 0])
 
     # compute score
-    J = torch.from_numpy(dists/max(dists)) + w * (res / max(res))
+    j = torch.from_numpy(dists/max(dists)) + w * (res / max(res))
     # pick point with max score
     if get_all_candidates:
-        return cands, J
+        return cands, j
     else:
-        return cands[torch.argmax(J)]
+        return cands[torch.argmax(j)].unsqueeze(-1)
