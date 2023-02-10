@@ -77,7 +77,7 @@ class NewTurboState:
             return train_x_tr, train_y_tr
 
 
-def new_update_state(state: NewTurboState, x_train, y_train , y_next):
+def new_update_state(state: NewTurboState, x_train, y_train, y_next):
     """Update the state of the trust region each iteration"""
     # check if the last iteration was successful and update attributes
     if torch.max(y_next) > state.best_value + 1e-3 * math.fabs(state.best_value):
