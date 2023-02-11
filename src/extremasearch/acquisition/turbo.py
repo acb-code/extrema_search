@@ -106,6 +106,21 @@ def new_update_state(state: NewTurboState, x_train, y_train, y_next):
     return state
 
 
+def turbo_region_bounds(model: ExactGP, x_center, length):
+    """Get the bounds for the turbo trust region"""
+    # scale the trust region to be proportional to the length scales
+    weights = model.covar_module.base_kernel.lengthscale.squeeze().detach()
+    weights = weights / weights.mean()
+    # weights = weights / torch.prod(weights.pow(1.0 / len(weights)))
+    tr_lb = torch.clamp(x_center - weights * length / 2.0, 0.0, 1.0)
+    tr_ub = torch.clamp(x_center + weights * length / 2.0, 0.0, 1.0)
+    return tr_lb, tr_ub
+
+
+def turbo_thompson_sampling():
+    """Convert candidates and trust region geometry to next sample point"""
+
+
 def generate_batch(state: NewTurboState,  # trust region state
                    model: ExactGP,  # GP model
                    x,  # evaluated points on [0,1]
@@ -123,13 +138,14 @@ def generate_batch(state: NewTurboState,  # trust region state
     if n_candidates is None:
         n_candidates = min(5000, max(2000, 200 * x.shape[-1]))
 
-    # scale the trust region to be proportional to the length scales
+    # # scale the trust region to be proportional to the length scales
     x_center = x[y.argmax(), :].clone()
-    weights = model.covar_module.base_kernel.lengthscale.squeeze().detach()
-    weights = weights / weights.mean()
-    # weights = weights / torch.prod(weights.pow(1.0 / len(weights)))
-    tr_lb = torch.clamp(x_center - weights * state.length / 2.0, 0.0, 1.0)
-    tr_ub = torch.clamp(x_center + weights * state.length / 2.0, 0.0, 1.0)
+    # weights = model.covar_module.base_kernel.lengthscale.squeeze().detach()
+    # weights = weights / weights.mean()
+    # # weights = weights / torch.prod(weights.pow(1.0 / len(weights)))
+    # tr_lb = torch.clamp(x_center - weights * state.length / 2.0, 0.0, 1.0)
+    # tr_ub = torch.clamp(x_center + weights * state.length / 2.0, 0.0, 1.0)
+    tr_lb, tr_ub = turbo_region_bounds(model, x_center, state.length)
 
     if acqf == 'ts':
         # thompson sampling
