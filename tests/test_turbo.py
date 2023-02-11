@@ -95,6 +95,22 @@ def test_update_state_success_counter(simple_turbo_state):
     assert new_state.ub == old_ub
 
 
+def test_update_state_failure_counter(simple_turbo_state):
+    # modify state to make trust region ready to expand
+    simple_turbo_state.failure_counter = simple_turbo_state.failure_tolerance - 1
+    original_length = simple_turbo_state.length
+    old_lb = simple_turbo_state.lb
+    old_ub = simple_turbo_state.ub
+    updated_x = torch.tensor([0.2, 0.3, 0.4, 0.28], dtype=dtype).unsqueeze(-1)
+    updated_y = torch.tensor([0.4, 0.8, 0.2, 0.1], dtype=dtype).unsqueeze(-1)
+    new_state = new_update_state(simple_turbo_state, updated_x, updated_y, torch.max(updated_y))
+    assert new_state.length == original_length/2.0
+    assert new_state.failure_counter == 0
+    # note that lb and ub are static
+    assert new_state.lb == old_lb
+    assert new_state.ub == old_ub
+
+
 
 
 
