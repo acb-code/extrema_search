@@ -56,14 +56,28 @@ def test_get_training_samples_in_region(simple_turbo_state):
     assert y_in.dtype == torch.double
 
 
-def test_update_state(simple_turbo_state):
+def test_update_state_single_success(simple_turbo_state):
     # tr success
     assert simple_turbo_state.success_counter == 0
+    assert simple_turbo_state.best_value == torch.tensor(0.8, dtype=dtype)
     updated_x = torch.tensor([0.2, 0.3, 0.4, 0.28], dtype=dtype).unsqueeze(-1)
     updated_y = torch.tensor([0.4, 0.8, 0.2, 0.9], dtype=dtype).unsqueeze(-1)
     new_state = new_update_state(simple_turbo_state, updated_x, updated_y, torch.max(updated_y))
     assert new_state.success_counter == 1
     assert simple_turbo_state.success_counter == 1  # access and changes happen by reference
+    assert new_state.best_value == torch.tensor(0.9, dtype=dtype)
+
+
+def test_update_state_single_failure(simple_turbo_state):
+    # tr failure
+    assert simple_turbo_state.failure_counter == 0
+    assert simple_turbo_state.best_value == torch.tensor(0.8, dtype=dtype)
+    updated_x = torch.tensor([0.2, 0.3, 0.4, 0.28], dtype=dtype).unsqueeze(-1)
+    updated_y = torch.tensor([0.4, 0.8, 0.2, 0.1], dtype=dtype).unsqueeze(-1)
+    new_state = new_update_state(simple_turbo_state, updated_x, updated_y, torch.max(updated_y))
+    assert new_state.failure_counter == 1
+    assert simple_turbo_state.failure_counter == 1  # access and changes happen by reference
+    assert new_state.best_value == torch.tensor(0.8, dtype=dtype)
 
 
 
