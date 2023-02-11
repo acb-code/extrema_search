@@ -11,6 +11,7 @@ dtype = torch.double
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
+# test overall state object
 def test_turbo_init_setup():
     state = NewTurboState(dim=1, batch_size=1, center=torch.tensor([0.5], dtype=dtype),
                           lb=torch.tensor([0.0], dtype=dtype), ub=torch.tensor([1.0], dtype=dtype))
@@ -56,6 +57,7 @@ def test_get_training_samples_in_region(simple_turbo_state):
     assert y_in.dtype == torch.double
 
 
+# test state update function
 def test_update_state_single_success(simple_turbo_state):
     # tr success
     assert simple_turbo_state.success_counter == 0
@@ -77,7 +79,7 @@ def test_update_state_single_failure(simple_turbo_state):
     new_state = new_update_state(simple_turbo_state, updated_x, updated_y, torch.max(updated_y))
     assert new_state.failure_counter == 1
     assert simple_turbo_state.failure_counter == 1  # access and changes happen by reference
-    assert new_state.best_value == torch.tensor(0.8, dtype=dtype)
+    assert new_state.best_value == torch.tensor(0.8, dtype=dtype)  # note that this is scalar (1,)
 
 
 def test_update_state_success_counter(simple_turbo_state):
@@ -111,9 +113,19 @@ def test_update_state_failure_counter(simple_turbo_state):
     assert new_state.ub == old_ub
 
 
+def test_turbo_restart(simple_turbo_state):
+    # modify state to make ready to restart
+    simple_turbo_state.length = simple_turbo_state.length_min + 1e-4
+    simple_turbo_state.failure_counter = simple_turbo_state.failure_tolerance - 1
+    original_length = simple_turbo_state.length
+    updated_x = torch.tensor([0.2, 0.3, 0.4, 0.28], dtype=dtype).unsqueeze(-1)
+    updated_y = torch.tensor([0.4, 0.8, 0.2, 0.1], dtype=dtype).unsqueeze(-1)
+    new_state = new_update_state(simple_turbo_state, updated_x, updated_y, torch.max(updated_y))
+    assert new_state.restart_triggered is True
+    assert new_state.length == 0.5
 
 
-
+# test acquisition function
 
 
 
