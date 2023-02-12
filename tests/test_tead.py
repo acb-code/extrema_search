@@ -11,6 +11,7 @@ from scipy.stats.qmc import LatinHypercube
 dtype = torch.double
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+
 @pytest.fixture
 def example_1d_model():
     dtype = torch.double

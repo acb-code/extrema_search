@@ -146,7 +146,7 @@ class LocalExtremeSearch:
                                         )
                 print('turbo')
             elif acq_type == 'tead':
-                next_x = global_tead(self.local_state.local_model).unsqueeze(-1)
+                next_x = global_tead(self.local_state.local_model)
                 print('tead')
             elif acq_type == 'nei':
                 qmc_sampler = SobolQMCNormalSampler(MC_SAMPLES)

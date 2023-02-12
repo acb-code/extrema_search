@@ -94,7 +94,7 @@ class MultimodalExtremaSearch:
                                               x_local=self.global_state.x_global,
                                               y_local=self.global_state.y_global,)
         initial_local_search = LocalExtremeSearch(self.max_local_evals, self.min_local_init_evals,
-                                                  initial_local_data)
+                                                  initial_local_data, self.obj_func)
         self.global_state.partition_graph.add_node(0, data=initial_local_data, search=initial_local_search)
         self.global_state.num_levels = 1
         # run initial local search
@@ -367,7 +367,7 @@ class MultimodalExtremaSearch:
         # run initial tead points
         num_initial_tead = 5
         local_pre_search = LocalExtremeSearch(num_initial_tead, self.min_local_init_evals,
-                                              current_local_data)
+                                              current_local_data, self.obj_func)
         current_node['presearch'] = local_pre_search
         local_pre_search.run_local_search('tead')
         # update state for running turbo search - is this needed? Or is the object pointed to
@@ -377,7 +377,7 @@ class MultimodalExtremaSearch:
         #                                       y_local=self.global_state.y_global,)
         # run turbo points
         local_search = LocalExtremeSearch(self.max_local_evals, self.min_local_init_evals,
-                                          current_local_data)
+                                          current_local_data, self.obj_func)
         current_node['search'] = local_search
         # run local search
         # local_search.run_local_search()
