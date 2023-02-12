@@ -16,7 +16,9 @@ from dataclasses import dataclass
 from botorch.acquisition.monte_carlo import qNoisyExpectedImprovement
 from botorch import fit_gpytorch_mll
 from botorch.optim import optimize_acqf
-
+from botorch.models.gp_regression import SingleTaskGP
+from gpytorch.mlls import ExactMarginalLogLikelihood
+from extremasearch.acquisition.turbo import *
 
 # setup
 dtype = torch.double
@@ -42,4 +44,145 @@ def optimize_acqf_and_get_next_x(acq_func):
     # observe new values
     new_x = candidates.detach()
     return new_x
+
+
+@dataclass
+class LocalSearchState:
+    """Holds the local search state information to be updated by running the search"""
+    input_dim: int
+    local_bounds: torch.Tensor
+    x_local: torch.Tensor
+    y_local: torch.Tensor
+    trust_region: NewTurboState = None
+    x_local_extreme: torch.Tensor = None
+    y_local_extreme: torch.Tensor = None
+    local_model: SingleTaskGP = None
+    local_mll: ExactMarginalLogLikelihood = None
+    most_recent_x_local: torch.Tensor = None
+    most_recent_y_local: torch.Tensor = None
+
+
+@dataclass
+class LocalExtremeSearch:
+    """Runs the local search to update the local search state"""
+    max_local_evals: int
+    min_local_init_evals: int
+    local_state: LocalSearchState
+
+    def initialize_local_search(self):
+        """Set up the local search object"""
+        # set up state object
+        # check initial data
+        x_initial = self.local_state.x_local
+        # if not enough initial data points in local subdomain, sample more randomly todo: sobol or lhs, ndim
+        if x_initial.shape[0] < self.min_local_init_evals:
+            # sample randomly in subdomain to get to min
+            num_new = self.min_local_init_evals - x_initial.shape[0]
+            new_x = torch.rand(num_new, 1, device=device, dtype=dtype)
+            local_x = new_x * (self.local_state.local_bounds[1] - self.local_state.local_bounds[0]) # todo: ndim
+            local_x = local_x + self.local_state.local_bounds[0]
+            new_y = outcome_objective(local_x)
+            # update local data set
+            self.local_state.x_local = torch.cat((self.local_state.x_local, local_x), 0)
+            self.local_state.y_local = torch.cat((self.local_state.y_local, new_y), 0)
+            # store new evaluations to add to global data set later
+            self.local_state.most_recent_x_local = local_x
+            self.local_state.most_recent_y_local = new_y
+        # initialize gp model
+        gp_x = self.local_state.x_local
+        gp_y = self.local_state.y_local
+        self.local_state.local_mll, self.local_state.local_model = initialize_model(gp_x, gp_y, None)
+
+    def run_local_search(self, acq_type: str = 'turbo'):
+        """Run the search based on the local starting point"""
+        # initialize local search
+        self.initialize_local_search()
+        # local search loop
+        converged = False
+        local_iter = 0
+        # initialize turbo trust region
+        # self.local_state.trust_region = NewTurboState(dim=1, batch_size=1, center=0.5, lb=0.0, ub=1.0)
+        # trying setting the bounds to contrain the turbo search to the selected subdomain
+        self.local_state.trust_region = NewTurboState(dim=1,
+                                                      batch_size=1,
+                                                      center=0.5,
+                                                      lb=self.local_state.local_bounds[0],
+                                                      ub=self.local_state.local_bounds[1],
+                                                      length=self.local_state.local_bounds[1]-self.local_state.local_bounds[0],
+                                                      domain_constraints=self.local_state.local_bounds)
+        self.local_state.trust_region = new_update_state(self.local_state.trust_region,
+                                                         self.local_state.x_local,
+                                                         self.local_state.y_local,
+                                                         max(self.local_state.y_local))
+        while not converged and local_iter <= self.max_local_evals:
+            # fit the gp model
+            self.fit_local_model()
+            # run the acquisition function
+            if acq_type == 'turbo':
+                next_x = generate_batch(state=self.local_state.trust_region,
+                                              model=self.local_state.local_model,
+                                              x=self.local_state.x_local,
+                                              y=self.local_state.y_local,
+                                              batch_size=1,
+                                              n_candidates=N_CANDIDATES,
+                                              num_restarts=NUM_RESTARTS,
+                                              raw_samples=RAW_SAMPLES,
+                                              acqf='ts',
+                                              )
+                print('turbo')
+            elif acq_type == 'tead':
+                next_x = deterministic_tead(self.local_state.local_model).unsqueeze(-1)
+                print('tead')
+            elif acq_type == 'nei':
+                qmc_sampler = SobolQMCNormalSampler(MC_SAMPLES)
+                qNEI = qNoisyExpectedImprovement(model=self.local_state.local_model,
+                                                 X_baseline=self.local_state.x_local,
+                                                 sampler=qmc_sampler,
+                                                )
+                next_x = optimize_acqf_and_get_next_x(qNEI)
+            else:
+                print('Error: unknown acquisition function for local search')
+            next_y = outcome_objective(next_x)
+            # update x,y data points
+            # todo: add selectors for different acq options
+            # local x,y values
+            self.local_state.x_local = torch.cat((self.local_state.x_local, next_x), 0)
+            self.local_state.y_local = torch.cat((self.local_state.y_local, next_y), 0)
+            # new x,y values from this local search only
+            if self.local_state.most_recent_x_local is not None:
+                self.local_state.most_recent_x_local = torch.cat((self.local_state.most_recent_x_local, next_x), 0)
+                self.local_state.most_recent_y_local = torch.cat((self.local_state.most_recent_y_local, next_y), 0)
+            else:
+                self.local_state.most_recent_x_local = next_x
+                self.local_state.most_recent_y_local = next_y
+            # update trust region
+            #print(max(self.local_state.y_local))
+            self.local_state.trust_region = new_update_state(self.local_state.trust_region,
+                                                             x_train=self.local_state.x_local,
+                                                             y_train=self.local_state.y_local,
+                                                             y_next=max(self.local_state.y_local))
+            # update local model - using only local training samples inside the updated trust region
+            x_in_region, y_in_region = self.local_state.trust_region.get_training_samples_in_region()
+            if acq_type == 'turbo':
+                self.local_state.local_mll, self.local_state.local_model = initialize_model(x_in_region,
+                                                                                        y_in_region, None)
+            elif acq_type == 'tead':
+                self.local_state.local_mll, self.local_state.local_model = initialize_model(self.local_state.x_local,
+                                                                                        self.local_state.y_local, None)
+            else:
+                self.local_state.local_mll, self.local_state.local_model = initialize_model(self.local_state.x_local,
+                                                                                        self.local_state.y_local, None)
+                print('Error: unknown acquisition function for local search')
+            local_iter += 1
+            if self.local_state.trust_region.restart_triggered:
+                converged = True
+        # exit local search and return results
+        local_search_extreme_y, extreme_idx = torch.max(input=self.local_state.y_local, dim=0, keepdim=True)
+        local_search_extreme_x = self.local_state.x_local[extreme_idx[0]]
+        self.local_state.x_local_extreme = local_search_extreme_x
+        self.local_state.y_local_extreme = local_search_extreme_y
+
+    def fit_local_model(self):
+        """Fit the local model"""
+        fit_gpytorch_mll(self.local_state.local_mll)
 
