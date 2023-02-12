@@ -117,8 +117,29 @@ def turbo_region_bounds(model: ExactGP, x_center, length):
     return tr_lb, tr_ub
 
 
-def turbo_thompson_sampling():
+def turbo_thompson_sampling(state: NewTurboState, n_candidates, tr_lb, tr_ub, x_center, model, batch_size):
     """Convert candidates and trust region geometry to next sample point"""
+    # thompson sampling
+    dim = state.train_x.shape[-1]
+    sobol = SobolEngine(dim, scramble=True)
+    pert = sobol.draw(n_candidates).to(dtype=dtype, device=device)
+    pert = tr_lb + (tr_ub - tr_lb) * pert
+    # create perturbation mask
+    prob_perturb = min(20.0 / dim, 1.0)
+    mask = (
+            torch.rand(n_candidates, dim, dtype=dtype, device=device)
+            <= prob_perturb
+    )
+    ind = torch.where(mask.sum(dim=1) == 0)[0]
+    mask[ind, torch.randint(0, 1, size=(len(ind),), device=device)] = 1
+    # create candidate points from the perturbations and the mask
+    x_cand = x_center.expand(n_candidates, dim).clone()
+    x_cand[mask] = pert[mask]
+
+    # sample the candidate points
+    thompson_sampling = MaxPosteriorSampling(model=model, replacement=False)
+    with torch.no_grad():
+        return thompson_sampling(x_cand, num_samples=batch_size)
 
 
 def generate_batch(state: NewTurboState,  # trust region state
@@ -148,27 +169,28 @@ def generate_batch(state: NewTurboState,  # trust region state
     tr_lb, tr_ub = turbo_region_bounds(model, x_center, state.length)
 
     if acqf == 'ts':
-        # thompson sampling
-        dim = state.train_x.shape[-1]
-        sobol = SobolEngine(dim, scramble=True)
-        pert = sobol.draw(n_candidates).to(dtype=dtype, device=device)
-        pert = tr_lb + (tr_ub - tr_lb) * pert
-        # create perturbation mask
-        prob_perturb = min(20.0 / dim, 1.0)
-        mask = (
-            torch.rand(n_candidates, dim, dtype=dtype, device=device)
-            <= prob_perturb
-        )
-        ind = torch.where(mask.sum(dim=1) == 0)[0]
-        mask[ind, torch.randint(0, 1, size=(len(ind),), device=device)] = 1
-        # create candidate points from the perturbations and the mask
-        x_cand = x_center.expand(n_candidates, dim).clone()
-        x_cand[mask] = pert[mask]
-
-        # sample the candidate points
-        thompson_sampling = MaxPosteriorSampling(model=model, replacement=False)
-        with torch.no_grad():
-            x_next = thompson_sampling(x_cand, num_samples=batch_size)
+        # # thompson sampling
+        # dim = state.train_x.shape[-1]
+        # sobol = SobolEngine(dim, scramble=True)
+        # pert = sobol.draw(n_candidates).to(dtype=dtype, device=device)
+        # pert = tr_lb + (tr_ub - tr_lb) * pert
+        # # create perturbation mask
+        # prob_perturb = min(20.0 / dim, 1.0)
+        # mask = (
+        #     torch.rand(n_candidates, dim, dtype=dtype, device=device)
+        #     <= prob_perturb
+        # )
+        # ind = torch.where(mask.sum(dim=1) == 0)[0]
+        # mask[ind, torch.randint(0, 1, size=(len(ind),), device=device)] = 1
+        # # create candidate points from the perturbations and the mask
+        # x_cand = x_center.expand(n_candidates, dim).clone()
+        # x_cand[mask] = pert[mask]
+        #
+        # # sample the candidate points
+        # thompson_sampling = MaxPosteriorSampling(model=model, replacement=False)
+        # with torch.no_grad():
+        #     x_next = thompson_sampling(x_cand, num_samples=batch_size)
+        x_next = turbo_thompson_sampling(state, n_candidates, tr_lb, tr_ub, x_center, model, batch_size)
 
     elif acqf == 'ei':
         ei = qExpectedImprovement(model, y.max(), maximize=True)
