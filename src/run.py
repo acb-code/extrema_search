@@ -65,6 +65,7 @@ def get_bounds(graph):
         bound_list.append(current_bounds)
     return node_list, bound_list
 
+
 def get_bounds_all(graph):
     """Get the bounds for each node in a graph to be able to plot them"""
     graph_nodes = [n for n in graph]
@@ -82,7 +83,6 @@ def get_bounds_all(graph):
 
 test_nodes, test_bounds = get_bounds(test_global_search.global_state.partition_graph)
 all_nodes, all_bounds = get_bounds_all(test_global_search.global_state.partition_graph)
-
 
 
 def plot_1d_results(mll: ExactMarginalLogLikelihood, model: SingleTaskGP, x_search, y_search, nodes, bnds):
@@ -109,19 +109,19 @@ def plot_1d_results(mll: ExactMarginalLogLikelihood, model: SingleTaskGP, x_sear
     ax.legend()
 
 
+# plot the results with the partitioning
 plot_1d_results(test_global_search.global_state.global_mll, test_global_search.global_state.global_model,
-                 test_global_search.global_state.x_global, test_global_search.global_state.y_global,
-                 test_nodes, test_bounds)
+                test_global_search.global_state.x_global, test_global_search.global_state.y_global,
+                test_nodes, test_bounds)
 
-
+# tead global acq plot
 test_x_cand = test_global_search.global_state.x_global_candidates
 test_tead_scores = test_global_search.global_state.tead_global_scores
 
 f, ax = plt.subplots(1,1, figsize=(8, 6))
 ax.plot(test_x_cand.detach().numpy(), test_tead_scores.detach().numpy(), '.', color='b', label='tead scores')
 
-
-
+# tree figure
 T = test_global_search.global_state.partition_graph
 pos = nx.nx_agraph.graphviz_layout(T, prog="dot")
 
