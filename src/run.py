@@ -123,22 +123,19 @@ ax.plot(test_x_cand.detach().numpy(), test_tead_scores.detach().numpy(), '.', co
 
 
 T = test_global_search.global_state.partition_graph
-T.edges[0, 1]["bounds"] = test_bounds[0].numpy().round(decimals=3)
-test_nodes, test_bounds = get_bounds(test_global_search.global_state.partition_graph)
-edge_labels = nx.get_edge_attributes(T, "bounds")
-pos = graphviz_layout(T, prog="dot")
+pos = nx.nx_agraph.graphviz_layout(T, prog="dot")
 
 pos_attrs = {}
 for node, coords in pos.items():
-    pos_attrs[node] = (coords[0]-20, coords[1])
+    pos_attrs[node] = (coords[0]-15, coords[1])
 custom_node_attrs = {}
 for node, attrs in zip(all_nodes, all_bounds):
     custom_node_attrs[node] = str(attrs.numpy().round(decimals=3))
 
-f, ax = plt.subplots(1,1, figsize=(12, 8))
+f, ax = plt.subplots(1,1, figsize=(12, 8), constrained_layout=True)
 nx.draw(T, pos, with_labels=True, font_weight='bold', ax=ax)
-# nx.draw_networkx_edge_labels(T, pos, edge_labels=edge_labels, ax=ax)
 nx.draw_networkx_labels(T, pos_attrs, labels=custom_node_attrs, ax=ax)
+plt.show()
 plt.show()
 
 
