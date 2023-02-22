@@ -5,6 +5,7 @@ import torch
 import matplotlib.pyplot as plt
 import seaborn as sns
 from extremasearch.globalmm.globalsearch import MultimodalExtremaSearch
+from extremasearch.local.localsearch import initialize_model
 from botorch import fit_gpytorch_mll
 from botorch.models.gp_regression import SingleTaskGP
 from gpytorch.mlls import ExactMarginalLogLikelihood
@@ -145,8 +146,8 @@ all_nodes, all_bounds = get_bounds_all(test_global_search.global_state.partition
 def plot_1d_results(mll: ExactMarginalLogLikelihood, model: SingleTaskGP, x_search, y_search, nodes, bnds):
     """Plot 1d results for experiment on multi-modal optimization"""
     fit_gpytorch_mll(mll)
-    x_test = torch.linspace(0,1,400)
-    f, ax = plt.subplots(1,1, figsize=(8, 6))
+    x_test = torch.linspace(0, 1, 400)
+    f, ax = plt.subplots(1, 1, figsize=(8, 6))
     # true objective
     # ax.plot(x_test.numpy(), outcome_objective(x_test).numpy(), 'r-', alpha=0.9, label='true objective')
     sns.lineplot(x=x1, y=y_deter, ax=ax, color='r')
@@ -198,5 +199,66 @@ nx.draw(T, pos, with_labels=True, font_weight='bold', ax=ax)
 nx.draw_networkx_labels(T, pos_attrs, labels=custom_node_attrs, ax=ax)
 plt.show()
 
+
 # fit the local models
+def fit_local_models(graph):
+    """Go through leaf nodes and update LocalSearchState to have local {x, y}
+    based on global {x, y} that are within bounds"""
+    graph_leaves = [n for n in graph if graph.out_degree[n] == 0]
+    for n in graph_leaves:
+        current_node = graph.nodes()[n]
+        current_state = current_node['data']
+        if current_state.local_mll is not None:
+            fit_gpytorch_mll(current_state.local_mll)
+        else:
+            current_state.local_mll, current_state.local_model = \
+                initialize_model(current_state.x_local, current_state.y_local)
+            fit_gpytorch_mll(current_state.local_mll)
+
+
+g = test_global_search.global_state.partition_graph
+fit_local_models(g)
+
+
+# plot the local models
+def plot_local_models_1d(graph, x_search, y_search, nodes, bnds):
+    """Go through leaf nodes and plot the local models only within the bounds of the node"""
+    x_test = torch.linspace(0, 1, 400)
+    f, ax = plt.subplots(1, 1, figsize=(8, 6))
+    # true objective
+    # ax.plot(x_test.numpy(), outcome_objective(x_test).numpy(), 'r-', alpha=0.9, label='true objective')
+    sns.lineplot(x=x1, y=y_deter, ax=ax, color='r')
+    upper_99 = torch.quantile(y_reps, 0.995, dim=1)
+    lower_01 = torch.quantile(y_reps, 0.005, dim=1)
+    ax.fill_between(x1, lower_01, upper_99, color='r', alpha=0.3, label=r'99% quantiles')
+    # local models
+    graph_leaves = [n for n in graph if graph.out_degree[n] == 0]
+    for n in graph_leaves:
+        current_node = graph.nodes()[n]
+        current_state = current_node['data']
+        current_model = current_state.local_model
+        current_bounds = current_state.local_bounds
+        current_x_test_mask = torch.ge(x_test, current_bounds[0]) & torch.lt(x_test, current_bounds[1])
+        current_x_test = x_test[current_x_test_mask]
+        mean_test = current_model.posterior(current_x_test).mean.detach().numpy()
+        ax.plot(current_x_test.numpy(), mean_test, 'b-', alpha=0.9, label='surrogate mean')
+        var_test = current_model.posterior(current_x_test).variance.detach().numpy()
+        sd_test = np.sqrt(var_test)
+        upper_test = mean_test + 2.0 * sd_test
+        lower_test = mean_test - 2.0 * sd_test
+        ax.fill_between(current_x_test.numpy(), lower_test.squeeze(), upper_test.squeeze(), color='b', alpha=0.3,
+                        label=r'surrogate 2$\sigma$')
+    # training points
+    ax.plot(x_search.numpy()[0:10], y_search[0:10].numpy(), '.', color='tab:orange', label='initial data')
+    ax.plot(x_search.numpy()[10:], y_search[10:].numpy(), '.', color='g', label='bo data')
+    # partitions
+    for n, b in zip(nodes, bnds):
+        ax.plot([b[0].numpy(), b[0].numpy()], [-0.05, 1.45], 'k-')
+    # ax.legend()
+    plt.show()
+
+
+plot_local_models_1d(T, test_global_search.global_state.x_global, test_global_search.global_state.y_global,
+                     test_nodes, test_bounds)
+
 

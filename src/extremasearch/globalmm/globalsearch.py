@@ -371,8 +371,8 @@ class MultimodalExtremaSearch:
             mask_local = torch.ge(all_x, current_bounds[0]) & torch.lt(all_x, current_bounds[1])
             local_x = all_x[mask_local]
             local_y = all_y[mask_local]
-            current_state.x_local = local_x
-            current_state.y_local = local_y
+            current_state.x_local = local_x.unsqueeze(-1)
+            current_state.y_local = local_y.unsqueeze(-1)
 
     def run_selected_local_search(self, node):
         """Select and run the local search in a specified subdomain"""
