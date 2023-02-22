@@ -97,10 +97,10 @@ ax.fill_between(x1, lower_01, upper_99, color='b', alpha=0.3, label=r'99% quanti
 # plt.savefig(datasavedir + '/'+'up_nonstat_function_fill'+'.png')
 
 
-def outcome_objective(X):
+def outcome_objective(x):
     """wrapper for the outcome objective function"""
     # return mme_torch(X).type_as(X)
-    return mme_noise_jump_1d(X).type_as(X)
+    return mme_noise_jump_1d(x).type_as(x)
 
 
 test_global_bounds = torch.tensor([0.0, 1.0], dtype=dtype)

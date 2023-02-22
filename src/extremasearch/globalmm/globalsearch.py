@@ -98,7 +98,8 @@ class MultimodalExtremaSearch:
         self.global_state.partition_graph.add_node(0, data=initial_local_data, search=initial_local_search)
         self.global_state.num_levels = 1
         # run initial local search
-        self.global_state.partition_graph.nodes[0]['search'].run_local_search()
+        # self.global_state.partition_graph.nodes[0]['search'].run_local_search()
+        self.global_state.partition_graph.nodes[0]['search'].run_local_search(acq_type='tead')  # attempt with tead
         # update global search state
         x_new = self.global_state.partition_graph.nodes[0]['search'].local_state.most_recent_x_local
         y_new = self.global_state.partition_graph.nodes[0]['search'].local_state.most_recent_y_local
