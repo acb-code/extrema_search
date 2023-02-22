@@ -10,9 +10,9 @@ from botorch import fit_gpytorch_mll
 from botorch.models.gp_regression import SingleTaskGP
 from gpytorch.mlls import ExactMarginalLogLikelihood
 import numpy as np
-import pydot
+# import pydot
 import networkx as nx
-from networkx.drawing.nx_pydot import graphviz_layout
+# from networkx.drawing.nx_pydot import graphviz_layout
 
 
 # setup
