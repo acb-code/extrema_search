@@ -168,7 +168,7 @@ def plot_1d_results(mll: ExactMarginalLogLikelihood, model: SingleTaskGP, x_sear
     for n, b in zip(nodes, bnds):
         ax.plot([b[0].numpy(), b[0].numpy()], [-0.05, 1.45], 'k-')
     ax.legend()
-
+    plt.show()
 
 # plot the results with the partitioning
 plot_1d_results(test_global_search.global_state.global_mll, test_global_search.global_state.global_model,
@@ -193,10 +193,10 @@ custom_node_attrs = {}
 for node, attrs in zip(all_nodes, all_bounds):
     custom_node_attrs[node] = str(attrs.numpy().round(decimals=3))
 
-f, ax = plt.subplots(1,1, figsize=(12, 8), constrained_layout=True)
+f, ax = plt.subplots(1, 1, figsize=(12, 8), constrained_layout=True)
 nx.draw(T, pos, with_labels=True, font_weight='bold', ax=ax)
 nx.draw_networkx_labels(T, pos_attrs, labels=custom_node_attrs, ax=ax)
 plt.show()
-plt.show()
 
+# fit the local models
 
