@@ -77,7 +77,7 @@ def initialize_model(train_x, train_obj, state_dict=None):
 
 
 def initialize_scaled_model(train_x, train_obj, state_dict=None):
-    """function to initialize the GP model"""
+    """function to initialize the GP model with scaling on outputs and normalization on inputs"""
     model_obj = SingleTaskGP(train_x, train_obj, outcome_transform=Standardize(m=train_obj.shape[-1]),
                              input_transform=Normalize(d=train_x.shape[-1]))
     mll = ExactMarginalLogLikelihood(model_obj.likelihood, model_obj)
@@ -117,7 +117,8 @@ class LocalExtremeSearch:
         # initialize gp model
         gp_x = self.local_state.x_local
         gp_y = self.local_state.y_local
-        self.local_state.local_mll, self.local_state.local_model = initialize_model(gp_x, gp_y, None)
+        # self.local_state.local_mll, self.local_state.local_model = initialize_model(gp_x, gp_y, None)
+        self.local_state.local_mll, self.local_state.local_model = initialize_scaled_model(gp_x, gp_y, None)
 
     def run_local_search(self, acq_type: str = 'turbo'):
         """Run the search based on the local starting point"""
@@ -191,14 +192,22 @@ class LocalExtremeSearch:
             # update local model - using only local training samples inside the updated trust region
             x_in_region, y_in_region = self.local_state.trust_region.get_training_samples_in_region()
             if acq_type == 'turbo':
-                self.local_state.local_mll, self.local_state.local_model = initialize_model(x_in_region,
+                # self.local_state.local_mll, self.local_state.local_model = initialize_model(x_in_region,
+                #                                                                             y_in_region, None)
+                self.local_state.local_mll, self.local_state.local_model = initialize_scaled_model(x_in_region,
                                                                                             y_in_region, None)
             elif acq_type == 'tead':
-                self.local_state.local_mll, self.local_state.local_model = initialize_model(self.local_state.x_local,
+                # self.local_state.local_mll, self.local_state.local_model = initialize_model(self.local_state.x_local,
+                #                                                                             self.local_state.y_local,
+                #                                                                             None)
+                self.local_state.local_mll, self.local_state.local_model = initialize_scaled_model(self.local_state.x_local,
                                                                                             self.local_state.y_local,
                                                                                             None)
             else:
-                self.local_state.local_mll, self.local_state.local_model = initialize_model(self.local_state.x_local,
+                # self.local_state.local_mll, self.local_state.local_model = initialize_model(self.local_state.x_local,
+                #                                                                             self.local_state.y_local,
+                #                                                                             None)
+                self.local_state.local_mll, self.local_state.local_model = initialize_scaled_model(self.local_state.x_local,
                                                                                             self.local_state.y_local,
                                                                                             None)
                 print('Error: unknown acquisition function for local search')
