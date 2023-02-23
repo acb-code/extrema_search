@@ -178,9 +178,12 @@ plot_1d_results(test_global_search.global_state.global_mll, test_global_search.g
 # tead global acq plot
 test_x_cand = test_global_search.global_state.x_global_candidates
 test_tead_scores = test_global_search.global_state.tead_global_scores
+test_extrema = torch.tensor(test_global_search.global_state.converged_extrema)
 
-f, ax = plt.subplots(1,1, figsize=(8, 6))
+f, ax = plt.subplots(1, 1, figsize=(8, 6))
 ax.plot(test_x_cand.detach().numpy(), test_tead_scores.detach().numpy(), '.', color='b', label='tead scores')
+ax.plot(test_extrema[-4:][:, 0].numpy(), test_extrema[-4:][:, 1].numpy(), '.', color='c', label='penalty extrema')
+ax.legend()
 plt.show()
 
 # tree figure
@@ -208,12 +211,6 @@ def fit_local_models(graph):
     for n in graph_leaves:
         current_node = graph.nodes()[n]
         current_state = current_node['data']
-        # if current_state.local_mll is not None:
-        #     fit_gpytorch_mll(current_state.local_mll)
-        # else:
-        #     current_state.local_mll, current_state.local_model = \
-        #         initialize_model(current_state.x_local, current_state.y_local)
-        #     fit_gpytorch_mll(current_state.local_mll)
         current_state.local_model = SingleTaskGP(current_state.x_local, current_state.y_local,
                                                  input_transform=Normalize(d=current_state.x_local.shape[-1]),
                                                  outcome_transform=Standardize(m=current_state.y_local.shape[-1]))

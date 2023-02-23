@@ -21,6 +21,7 @@ from typing import Callable
 from dataclasses import dataclass
 from extremasearch.local.localsearch import LocalSearchState, LocalExtremeSearch, initialize_model
 import networkx as nx
+from botorch.models.transforms import Normalize, Standardize
 
 
 # setup
@@ -441,6 +442,51 @@ class MultimodalExtremaSearch:
     def fit_global_model(self):
         """Fit the global surrogate model"""
         fit_gpytorch_mll(self.global_state.global_mll)
+
+    def fit_global_model_partitioned(self):
+        """Fit a global model by combining the local models into a piecewise set
+        -requires that the local {x, y} values are updated prior to calling this function"""
+        graph = self.global_state.partition_graph
+        graph_leaves = [n for n in graph if graph.out_degree[n] == 0]
+        for n in graph_leaves:
+            current_node = graph.nodes()[n]
+            current_state = current_node['data']
+            current_state.local_model = SingleTaskGP(current_state.x_local, current_state.y_local,
+                                                     input_transform=Normalize(d=current_state.x_local.shape[-1]),
+                                                     outcome_transform=Standardize(m=current_state.y_local.shape[-1]))
+            current_state.local_mll = ExactMarginalLogLikelihood(current_state.local_model.likelihood,
+                                                                 current_state.local_model)
+            fit_gpytorch_mll(current_state.local_mll)
+
+    def get_bounds_of_leaves(self):
+        """Get the (node, bounds) pairs"""
+        graph = self.global_state.partition_graph
+        graph_leaves = [n for n in graph if graph.out_degree[n] == 0]
+        bound_list = []
+        node_list = []
+        for n in graph_leaves:
+            # get current leaf node
+            current_node = graph.nodes()[n]
+            current_state = current_node['data']
+            current_bounds = current_state.local_bounds
+            node_list.append(n)
+            bound_list.append(current_bounds)
+        return node_list, bound_list
+
+    def get_model_from_piecewise_set(self, x):
+        """Retrieves the local model from the piecewise set at the input point x"""
+        graph = self.global_state.partition_graph
+        graph_leaves = [n for n in graph if graph.out_degree[n] == 0]
+        for n in graph_leaves:
+            # get current leaf node
+            current_node = graph.nodes()[n]
+            current_state = current_node['data']
+            current_bounds = current_state.local_bounds
+            if current_bounds[0] <= x < current_bounds[1]:
+                return current_state.local_model
+        print("Using single global model")
+        return self.global_state.global_model
+
 
 
 
