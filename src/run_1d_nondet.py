@@ -13,6 +13,7 @@ import numpy as np
 # import pydot
 import networkx as nx
 # from networkx.drawing.nx_pydot import graphviz_layout
+from botorch.models.transforms import Normalize, Standardize
 
 
 # setup
@@ -208,12 +209,18 @@ def fit_local_models(graph):
     for n in graph_leaves:
         current_node = graph.nodes()[n]
         current_state = current_node['data']
-        if current_state.local_mll is not None:
-            fit_gpytorch_mll(current_state.local_mll)
-        else:
-            current_state.local_mll, current_state.local_model = \
-                initialize_model(current_state.x_local, current_state.y_local)
-            fit_gpytorch_mll(current_state.local_mll)
+        # if current_state.local_mll is not None:
+        #     fit_gpytorch_mll(current_state.local_mll)
+        # else:
+        #     current_state.local_mll, current_state.local_model = \
+        #         initialize_model(current_state.x_local, current_state.y_local)
+        #     fit_gpytorch_mll(current_state.local_mll)
+        current_state.local_model = SingleTaskGP(current_state.x_local, current_state.y_local,
+                                                 input_transform=Normalize(d=current_state.x_local.shape[-1]),
+                                                 outcome_transform=Standardize(m=current_state.y_local.shape[-1]))
+        current_state.local_mll = ExactMarginalLogLikelihood(current_state.local_model.likelihood,
+                                                             current_state.local_model)
+        fit_gpytorch_mll(current_state.local_mll)
 
 
 g = test_global_search.global_state.partition_graph
@@ -240,9 +247,9 @@ def plot_local_models_1d(graph, x_search, y_search, nodes, bnds):
         current_bounds = current_state.local_bounds
         current_x_test_mask = torch.ge(x_test, current_bounds[0]) & torch.lt(x_test, current_bounds[1])
         current_x_test = x_test[current_x_test_mask]
-        mean_test = current_model.posterior(current_x_test).mean.detach().numpy()
+        mean_test = current_model.posterior(current_x_test.unsqueeze(-1)).mean.detach().numpy()
         ax.plot(current_x_test.numpy(), mean_test, 'b-', alpha=0.9, label='surrogate mean')
-        var_test = current_model.posterior(current_x_test).variance.detach().numpy()
+        var_test = current_model.posterior(current_x_test.unsqueeze(-1)).variance.detach().numpy()
         sd_test = np.sqrt(var_test)
         upper_test = mean_test + 2.0 * sd_test
         lower_test = mean_test - 2.0 * sd_test
