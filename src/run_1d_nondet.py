@@ -5,6 +5,7 @@ import torch
 import matplotlib.pyplot as plt
 import seaborn as sns
 from extremasearch.globalmm.globalsearch import MultimodalExtremaSearch
+from extremasearch.acquisition.tead import piecewise_tead
 # from extremasearch.local.localsearch import initialize_model
 from botorch import fit_gpytorch_mll
 from botorch.models.gp_regression import SingleTaskGP
@@ -258,10 +259,14 @@ def plot_local_models_1d(graph, x_search, y_search, nodes, bnds):
     for n, b in zip(nodes, bnds):
         ax.plot([b[0].numpy(), b[0].numpy()], [-0.05, 1.45], 'k-')
     # ax.legend()
+    ax.set_ylim([-0.1, 1.6])
     plt.show()
 
 
 plot_local_models_1d(T, test_global_search.global_state.x_global, test_global_search.global_state.y_global,
                      test_nodes, test_bounds)
 
-
+x_ct, x_tt = piecewise_tead(test_global_search.global_state.x_global,
+                            test_global_search.global_state.y_global,
+                            test_global_search.global_state.partition_graph,
+                            get_all_candidates=True)

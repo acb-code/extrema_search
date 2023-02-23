@@ -100,3 +100,82 @@ def global_tead(model: ExactGP, get_all_candidates: bool = False):
         return cands, j
     else:
         return cands[torch.argmax(j)].unsqueeze(-1)
+
+
+def get_model_from_piecewise_set(graph, x):
+    """Retrieves the local model from the piecewise set at the input point x"""
+    graph_leaves = [n for n in graph if graph.out_degree[n] == 0]
+    for n in graph_leaves:
+        # get current leaf node
+        current_node = graph.nodes()[n]
+        current_state = current_node['data']
+        current_bounds = current_state.local_bounds
+        if current_bounds[0] <= x < current_bounds[1]:
+            return current_state.local_model
+    print("Model lookup failed")
+
+
+def finite_diff_piecewise(x_all, graph):
+    """get approx gradient at model training points"""
+    # assumes 1d input... see implementation in [3] for update to n-D
+    h = 1e-4
+    x = x_all.squeeze()
+    m = len(x)
+    delta_s = torch.zeros(m)
+    for i in range(0, m):
+        x_lo = x[i] - h
+        if x_lo < 0.0:
+            x_lo = torch.DoubleTensor([0.0])
+        x_hi = x[i] + h
+        if x_hi > 1.0:
+            x_hi = torch.DoubleTensor([1.0])
+        model_lo = get_model_from_piecewise_set(graph, x_lo.unsqueeze(-1))
+        y_lo = model_lo(x_lo.unsqueeze(-1)).mean
+        model_hi = get_model_from_piecewise_set(graph, x_hi.unsqueeze(-1))
+        y_hi = model_hi(x_hi.unsqueeze(-1)).mean
+        delta_s[i] = (y_hi - y_lo)/(2*h)
+    return delta_s
+
+
+def piecewise_tead(x_all, y_all, graph, get_all_candidates: bool = False):
+    """Modification of global_tead to use the piecewise models from a graph"""
+    # use {x, y} evaluations across space as in global_tead
+    x_train = x_all.squeeze()
+    y_train = y_all
+    # calculate gradient at each training point using finite difference
+    grads = finite_diff_piecewise(x_train, graph)
+    # (this may be available through torch built in behavior, but no time now
+    # generate potential input candidates using LHC samples
+    lhs_sampler = LatinHypercube(d=1)
+    num_cands = 2000
+    cands = torch.from_numpy(lhs_sampler.random(n=num_cands))
+    # calculate nearest neighbors pairings for the candidates
+    dists, inds = knn(x_train, cands)
+    # calculate the weighting
+    sample_dists = []
+    vals = x_train.numpy()
+    for i in range(len(vals)):
+        for j in range(len(vals)):
+            sample_dists.append(np.linalg.norm(vals[i] - vals[j]))
+    lmax = max(sample_dists)
+    w = torch.ones(num_cands, 1, dtype=dtype) - dists / lmax
+    # do taylor series expansions
+    t = torch.zeros(num_cands, 1, dtype=dtype)
+    s = torch.zeros(num_cands, 1, dtype=dtype)
+    res = torch.zeros(num_cands, 1, dtype=dtype)
+    for i in range(num_cands):
+        g = x_train[inds[i]] - cands[i]
+        t[i, 0] = y_train[inds[i]] + grads[inds[i]]*g
+        cur_model = get_model_from_piecewise_set(graph, cands[i])
+        s[i, 0] = cur_model(cands[i]).mean
+        res[i, 0] = torch.norm(s[i, 0] - t[i, 0])
+
+    # compute score
+    j = torch.from_numpy(dists/max(dists)) + w * (res / max(res))
+    # pick point with max score
+    if get_all_candidates:
+        return cands, j
+    else:
+        return cands[torch.argmax(j)].unsqueeze(-1)
+
+

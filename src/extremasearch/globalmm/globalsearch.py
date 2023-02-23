@@ -287,21 +287,7 @@ class MultimodalExtremaSearch:
         print("PARTITION: Splitting node ", self.current_max_preselect_node, " from ", lower_bound.item(), " to ",
               center_bound.item(), " to ", upper_bound.item())
         # set up new nodes
-        # x_left = self.global_state.x_global
-        # x_left_mask = torch.ge(x_left, left_bound[0]) & torch.lt(x_left, left_bound[1])
-        # x_left = x_left[x_left_mask].unsqueeze(-1)
-        # y_left = self.global_state.y_global[x_left_mask].unsqueeze(-1)
-        # left_local_data = LocalSearchState(input_dim=1, local_bounds=left_bound,
-        #                                    x_local=x_left,
-        #                                    y_local=y_left,)
         left_local_data = self.get_new_search(left_bound)
-        # x_right = self.global_state.x_global
-        # x_right_mask = torch.ge(x_right, right_bound[0]) & torch.lt(x_right, right_bound[1])
-        # x_right = x_right[x_right_mask].unsqueeze(-1)
-        # y_right = self.global_state.y_global[x_right_mask].unsqueeze(-1)
-        # right_local_data = LocalSearchState(input_dim=1, local_bounds=right_bound,
-        #                                    x_local=x_right,
-        #                                    y_local=y_right,)
         right_local_data = self.get_new_search(right_bound)
         current_max_node_num = graph.number_of_nodes() - 1
         self.global_state.partition_graph.add_node(current_max_node_num+1, data=left_local_data)
@@ -384,7 +370,7 @@ class MultimodalExtremaSearch:
         current_local_data = current_node['data']
         # set up local search
         # run initial tead points
-        num_initial_tead = 5
+        num_initial_tead = 2
         local_pre_search = LocalExtremeSearch(num_initial_tead, self.min_local_init_evals,
                                               current_local_data, self.obj_func)
         current_node['presearch'] = local_pre_search
