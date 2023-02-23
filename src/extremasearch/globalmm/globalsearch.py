@@ -84,6 +84,7 @@ class MultimodalExtremaSearch:
     reset_penalty_radius: float = 0.25
     num_previous_extrema: int = 4
     penalty_reset_size: float = 0.025
+    tead_model_type: str = 'piecewise'
 
     def initialize_global_state(self, x_init, y_init):
         """Set up the initial GlobalSearchState object"""
@@ -132,8 +133,14 @@ class MultimodalExtremaSearch:
     def compute_global_preselect_scores(self):
         """Use global value algorithm to assign value to points across input space"""
         # compute TEAD acquisition function on candidates from across input space
-        # using global model here, but potential to use local model instead todo: look into difference
-        x_candidates, x_tead_scores = global_tead(self.global_state.global_model, get_all_candidates=True)
+        # choose between global model using all data, or piecewise partitioned data model joint
+        if self.tead_model_type == 'global':
+            x_candidates, x_tead_scores = global_tead(self.global_state.global_model, get_all_candidates=True)
+        elif self.tead_model_type == 'piecewise':
+            x_candidates, x_tead_scores = piecewise_tead(self.global_state.x_global, self.global_state.y_global,
+                                                         self.global_state.partition_graph, get_all_candidates=True)
+        else:
+            print('TEAD type selection not recognized')
         self.global_state.x_global_candidates = x_candidates
         # get penalty
         current_penalty = self.get_penalty(x_candidates, x_tead_scores)
@@ -313,9 +320,17 @@ class MultimodalExtremaSearch:
     def compute_global_select_scores(self):
         """Use global value algorithm to assign value to subdomains for local search"""
         self.fit_global_model()
+        self.fit_global_model_partitioned()
         # option to use NEI or to use TEAD
         # todo: set up option, right now just TEAD
-        x_candidates, x_tead_scores = global_tead(self.global_state.global_model, get_all_candidates=True)
+        # have option for two approaches for tead
+        if self.tead_model_type == 'global':
+            x_candidates, x_tead_scores = global_tead(self.global_state.global_model, get_all_candidates=True)
+        elif self.tead_model_type == 'piecewise':
+            x_candidates, x_tead_scores = piecewise_tead(self.global_state.x_global, self.global_state.y_global,
+                                                         self.global_state.partition_graph, get_all_candidates=True)
+        else:
+            print('Global acquisition for select scores not recognized')
         # adding penalty
         current_penalty = self.get_penalty(x_candidates, x_tead_scores)
         x_tead_scores *= current_penalty
@@ -407,6 +422,8 @@ class MultimodalExtremaSearch:
         self.global_state.converged_extrema.append((local_extreme_x, local_extreme_y))
         # reset leaf node local_x and local_y based on bounds and global {x, y}
         self.reset_leaf_node_local_data()
+        # fit the piecewise models across the full space
+        self.fit_global_model_partitioned()
 
     def run_global_search(self):
         """Run the subroutines for the global search"""
@@ -414,6 +431,7 @@ class MultimodalExtremaSearch:
         while self.current_iteration <= self.total_iteration_limit:
             print('Fitting global model')
             self.fit_global_model()
+            self.fit_global_model_partitioned()
             print('Calculating pre-select scores')
             self.compute_global_preselect_scores()
             print('Calculating subdomain pre-select scores')
@@ -459,19 +477,20 @@ class MultimodalExtremaSearch:
             bound_list.append(current_bounds)
         return node_list, bound_list
 
-    def get_model_from_piecewise_set(self, x):
-        """Retrieves the local model from the piecewise set at the input point x"""
-        graph = self.global_state.partition_graph
-        graph_leaves = [n for n in graph if graph.out_degree[n] == 0]
-        for n in graph_leaves:
-            # get current leaf node
-            current_node = graph.nodes()[n]
-            current_state = current_node['data']
-            current_bounds = current_state.local_bounds
-            if current_bounds[0] <= x < current_bounds[1]:
-                return current_state.local_model
-        print("Using single global model")
-        return self.global_state.global_model
+    # moved to tead module
+    # def get_model_from_piecewise_set(self, x):
+    #     """Retrieves the local model from the piecewise set at the input point x"""
+    #     graph = self.global_state.partition_graph
+    #     graph_leaves = [n for n in graph if graph.out_degree[n] == 0]
+    #     for n in graph_leaves:
+    #         # get current leaf node
+    #         current_node = graph.nodes()[n]
+    #         current_state = current_node['data']
+    #         current_bounds = current_state.local_bounds
+    #         if current_bounds[0] <= x < current_bounds[1]:
+    #             return current_state.local_model
+    #     print("Using single global model")
+    #     return self.global_state.global_model
 
 
 
