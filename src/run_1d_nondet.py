@@ -5,14 +5,12 @@ import torch
 import matplotlib.pyplot as plt
 import seaborn as sns
 from extremasearch.globalmm.globalsearch import MultimodalExtremaSearch
-from extremasearch.local.localsearch import initialize_model
+# from extremasearch.local.localsearch import initialize_model
 from botorch import fit_gpytorch_mll
 from botorch.models.gp_regression import SingleTaskGP
 from gpytorch.mlls import ExactMarginalLogLikelihood
 import numpy as np
-# import pydot
 import networkx as nx
-# from networkx.drawing.nx_pydot import graphviz_layout
 from botorch.models.transforms import Normalize, Standardize
 
 

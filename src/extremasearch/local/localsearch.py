@@ -22,6 +22,7 @@ from extremasearch.acquisition.turbo import *
 from extremasearch.acquisition.tead import *
 from typing import Callable
 from botorch.sampling import SobolQMCNormalSampler
+from botorch.models.transforms import Normalize, Standardize
 
 # setup
 dtype = torch.double
@@ -68,6 +69,17 @@ class LocalSearchState:
 def initialize_model(train_x, train_obj, state_dict=None):
     """function to initialize the GP model"""
     model_obj = SingleTaskGP(train_x, train_obj)
+    mll = ExactMarginalLogLikelihood(model_obj.likelihood, model_obj)
+    # load state_dict if it is not passed
+    if state_dict is not None:
+        model_obj.load_state_dict(state_dict)
+    return mll, model_obj
+
+
+def initialize_scaled_model(train_x, train_obj, state_dict=None):
+    """function to initialize the GP model"""
+    model_obj = SingleTaskGP(train_x, train_obj, outcome_transform=Standardize(m=train_obj.shape[-1]),
+                             input_transform=Normalize(d=train_x.shape[-1]))
     mll = ExactMarginalLogLikelihood(model_obj.likelihood, model_obj)
     # load state_dict if it is not passed
     if state_dict is not None:
@@ -201,5 +213,9 @@ class LocalExtremeSearch:
 
     def fit_local_model(self):
         """Fit the local model"""
+        # update local model including scaling and normalization from data in current trust region
+        # get the data in the current trust region
+        # set up the model and mll using the normalization and scaling
+
         fit_gpytorch_mll(self.local_state.local_mll)
 
