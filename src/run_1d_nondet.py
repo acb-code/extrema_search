@@ -181,6 +181,7 @@ test_tead_scores = test_global_search.global_state.tead_global_scores
 
 f, ax = plt.subplots(1,1, figsize=(8, 6))
 ax.plot(test_x_cand.detach().numpy(), test_tead_scores.detach().numpy(), '.', color='b', label='tead scores')
+plt.show()
 
 # tree figure
 T = test_global_search.global_state.partition_graph
