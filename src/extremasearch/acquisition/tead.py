@@ -105,6 +105,8 @@ def global_tead(model: ExactGP, get_all_candidates: bool = False):
 def get_model_from_piecewise_set(graph, x):
     """Retrieves the local model from the piecewise set at the input point x"""
     graph_leaves = [n for n in graph if graph.out_degree[n] == 0]
+    # bound_list = []
+    # node_list = []
     for n in graph_leaves:
         # get current leaf node
         current_node = graph.nodes()[n]
@@ -112,6 +114,20 @@ def get_model_from_piecewise_set(graph, x):
         current_bounds = current_state.local_bounds
         if current_bounds[0] <= x < current_bounds[1]:
             return current_state.local_model
+        # also save the bounds-node map to use for edge cases
+        # bound_list.append(current_bounds)
+        # node_list.append(n)
+        if current_bounds[0] <= 0.001:
+            low_node = n
+        elif current_bounds[1] >= 0.999:
+            high_node = n
+    # handle slightly off bound queries
+    if x < 0.0:
+        # if a prediction lower than 0.0 needed
+        return graph.nodes()[low_node]['data'].local_model
+    elif x >= 1.0:
+        # if a prediction higher than 1.0 needed
+        return graph.nodes()[high_node]['data'].local_model
     print("Model lookup failed")
 
 
