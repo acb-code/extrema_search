@@ -94,6 +94,8 @@ class LocalExtremeSearch:
     min_local_init_evals: int
     local_state: LocalSearchState
     objective_function: Callable = None
+    length_history: torch.Tensor = None
+    tr_bound_history: torch.Tensor = None
 
     def initialize_local_search(self):
         """Set up the local search object"""
@@ -114,6 +116,10 @@ class LocalExtremeSearch:
             # store new evaluations to add to global data set later
             self.local_state.most_recent_x_local = local_x
             self.local_state.most_recent_y_local = new_y
+        else:
+            # make sure new evaluations data reset
+            self.local_state.most_recent_x_local = None
+            self.local_state.most_recent_y_local = None
         # initialize gp model
         gp_x = self.local_state.x_local
         gp_y = self.local_state.y_local
