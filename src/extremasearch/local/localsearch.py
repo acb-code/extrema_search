@@ -141,13 +141,17 @@ class LocalExtremeSearch:
                                                       center=torch.tensor([0.5], dtype=dtype),
                                                       lb=self.local_state.local_bounds[0],
                                                       ub=self.local_state.local_bounds[1],
-                                                      length=self.local_state.local_bounds[1] -
-                                                      self.local_state.local_bounds[0],
-                                                      domain_constraints=self.local_state.local_bounds)
+                                                      length=0.25*(self.local_state.local_bounds[1] -
+                                                                  self.local_state.local_bounds[0]),
+                                                      domain_constraints=self.local_state.local_bounds,
+                                                      length_max=0.5*(self.local_state.local_bounds[1] -
+                                                                      self.local_state.local_bounds[0])
+                                                      )
         self.local_state.trust_region = new_update_state(self.local_state.trust_region,
                                                          self.local_state.x_local,
                                                          self.local_state.y_local,
-                                                         max(self.local_state.y_local))
+                                                         max(self.local_state.y_local)
+                                                         )
         while not converged and local_iter <= self.max_local_evals:
             # fit the gp model
             self.fit_local_model()
