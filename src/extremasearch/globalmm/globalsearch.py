@@ -85,6 +85,7 @@ class MultimodalExtremaSearch:
     num_previous_extrema: int = 4
     penalty_reset_size: float = 0.025
     tead_model_type: str = 'piecewise'
+    num_tead_explore_evals: int = 5
 
     def initialize_global_state(self, x_init, y_init):
         """Set up the initial GlobalSearchState object"""
@@ -129,6 +130,39 @@ class MultimodalExtremaSearch:
         # set up global state
         print('Setting up global state')
         self.initialize_global_state(x_init, y_init)
+
+    def run_global_tead_exploration_evaluations(self):
+        """Evaluate the best TEAD points for a handful of iterations prior to allocating a local search
+        with the goal of using TEAD uniformity and nonlinearity foci to uncover potential localize extrema"""
+        tead_iter = 0
+        self.fit_global_model()
+        self.fit_global_model_partitioned()
+        while tead_iter < self.num_tead_explore_evals:
+            # update model fit and compute TEAD acquisition function on candidates from across input space
+            # choose between global model using all data, or piecewise partitioned data model joint
+            if self.tead_model_type == 'global':
+                x_candidates, x_tead_scores = global_tead(self.global_state.global_model, get_all_candidates=True)
+            elif self.tead_model_type == 'piecewise':
+                x_candidates, x_tead_scores = piecewise_tead(self.global_state.x_global, self.global_state.y_global,
+                                                             self.global_state.partition_graph, get_all_candidates=True)
+            else:
+                print('TEAD type selection not recognized')
+            # apply penalty
+            current_penalty = self.get_penalty(x_candidates, x_tead_scores)
+            x_penalized_scores = x_tead_scores * current_penalty
+            # evaluate objective at best penalized TEAD point
+            score_max, max_idx = torch.max(input=x_penalized_scores, dim=0, keepdim=True)
+            x_max = x_candidates[max_idx[0]]
+            y_new = self.obj_func(x_max)
+            # update global state using new objective evaluation
+            self.current_iteration += 1
+            self.global_state.x_global = torch.cat((self.global_state.x_global, x_max), 0)
+            self.global_state.y_global = torch.cat((self.global_state.y_global, y_new), 0)
+            self.update_extreme()
+            self.fit_global_model()
+            self.fit_global_model_partitioned()
+            tead_iter += 1
+            print("Completed: TEAD exploration iteration")
 
     def compute_global_preselect_scores(self):
         """Use global value algorithm to assign value to points across input space"""
@@ -385,7 +419,7 @@ class MultimodalExtremaSearch:
         current_local_data = current_node['data']
         # set up local search
         # run initial tead points
-        num_initial_tead = 2
+        num_initial_tead = 1
         local_pre_search = LocalExtremeSearch(num_initial_tead, self.min_local_init_evals,
                                               current_local_data, self.obj_func)
         current_node['presearch'] = local_pre_search
@@ -432,6 +466,8 @@ class MultimodalExtremaSearch:
             print('Fitting global model')
             self.fit_global_model()
             self.fit_global_model_partitioned()
+            print('Exploring full space')
+            self.run_global_tead_exploration_evaluations()
             print('Calculating pre-select scores')
             self.compute_global_preselect_scores()
             print('Calculating subdomain pre-select scores')
