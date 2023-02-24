@@ -142,7 +142,7 @@ class LocalExtremeSearch:
                                                       lb=self.local_state.local_bounds[0],
                                                       ub=self.local_state.local_bounds[1],
                                                       length=0.25*(self.local_state.local_bounds[1] -
-                                                                  self.local_state.local_bounds[0]),
+                                                                   self.local_state.local_bounds[0]),
                                                       domain_constraints=self.local_state.local_bounds,
                                                       length_max=0.5*(self.local_state.local_bounds[1] -
                                                                       self.local_state.local_bounds[0])
@@ -182,7 +182,6 @@ class LocalExtremeSearch:
                 print('Error: unknown acquisition function for local search')
             next_y = self.objective_function(next_x)
             # update x,y data points
-            # todo: add selectors for different acq options
             # local x,y values
             self.local_state.x_local = torch.cat((self.local_state.x_local, next_x), 0)
             self.local_state.y_local = torch.cat((self.local_state.y_local, next_y), 0)
@@ -198,25 +197,18 @@ class LocalExtremeSearch:
             self.local_state.trust_region = new_update_state(self.local_state.trust_region,
                                                              x_train=self.local_state.x_local,
                                                              y_train=self.local_state.y_local,
-                                                             y_next=max(self.local_state.y_local))
+                                                             y_next=max(self.local_state.y_local)
+                                                             )
             # update local model - using only local training samples inside the updated trust region
             x_in_region, y_in_region = self.local_state.trust_region.get_training_samples_in_region()
             if acq_type == 'turbo':
-                # self.local_state.local_mll, self.local_state.local_model = initialize_model(x_in_region,
-                #                                                                             y_in_region, None)
                 self.local_state.local_mll, self.local_state.local_model = initialize_scaled_model(x_in_region,
-                                                                                            y_in_region, None)
+                                                                                                   y_in_region, None)
             elif acq_type == 'tead':
-                # self.local_state.local_mll, self.local_state.local_model = initialize_model(self.local_state.x_local,
-                #                                                                             self.local_state.y_local,
-                #                                                                             None)
                 self.local_state.local_mll, self.local_state.local_model = initialize_scaled_model(self.local_state.x_local,
                                                                                             self.local_state.y_local,
                                                                                             None)
             else:
-                # self.local_state.local_mll, self.local_state.local_model = initialize_model(self.local_state.x_local,
-                #                                                                             self.local_state.y_local,
-                #                                                                             None)
                 self.local_state.local_mll, self.local_state.local_model = initialize_scaled_model(self.local_state.x_local,
                                                                                             self.local_state.y_local,
                                                                                             None)
