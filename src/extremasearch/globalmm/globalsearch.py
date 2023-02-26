@@ -232,7 +232,7 @@ class MultimodalExtremaSearch:
                 for j in range(len(x_vals)):
                     dists.append(torch.linalg.norm(x_vals[i]-x_vals[j]))
             max_dist = torch.max(torch.tensor(dists))
-            new_rad = 0.5*max_dist
+            new_rad = 0.25*max_dist
             # check if the radius is too small
             if new_rad < self.penalty_reset_size:
                 self.penalty_radius = torch.tensor([0.25], dtype=dtype)
