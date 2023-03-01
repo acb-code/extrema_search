@@ -65,6 +65,15 @@ class GlobalSearchState:
 
 
 @dataclass
+class SearchIterationData:
+    """Holds data on each search iteration to simplify adding and accessing the data"""
+    x: torch.Tensor = None
+    y: torch.Tensor = None
+    acq_type: str = None
+    iter_num: int = None
+
+
+@dataclass
 class MultimodalExtremaSearch:
     num_batch: int
     x_bounds: torch.Tensor
@@ -86,6 +95,7 @@ class MultimodalExtremaSearch:
     penalty_reset_size: float = 0.025
     tead_model_type: str = 'piecewise'
     num_tead_explore_evals: int = 5
+    search_history: list[SearchIterationData] = None
 
     def initialize_global_state(self, x_init, y_init):
         """Set up the initial GlobalSearchState object"""
