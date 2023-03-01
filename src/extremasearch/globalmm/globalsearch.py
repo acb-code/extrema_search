@@ -29,9 +29,11 @@ dtype = torch.double
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-def generate_initial_data_with_function(obj_func, n=10):
+def generate_initial_data_with_function(obj_func, n=10, eval_limit: int = None, dim: int = 1):
     """generate initial set of data with a given objective function"""
-    train_x = torch.rand(n, 1, device=device, dtype=dtype)
+    if eval_limit is not None:
+        n = min(n, eval_limit)
+    train_x = torch.rand(n, dim, device=device, dtype=dtype)
     exact_obj = obj_func(train_x)
     train_obj = exact_obj
     best_observed_value = exact_obj.max().item()
@@ -138,7 +140,15 @@ class MultimodalExtremaSearch:
         """Set up the initial state of the global search"""
         # collect initial samples
         print('Collecting initial samples')
-        x_init, y_init, best_y = generate_initial_data_with_function(self.obj_func, n=self.num_initial_samples)
+        x_init, y_init, best_y = generate_initial_data_with_function(self.obj_func, n=self.num_initial_samples,
+                                                                     eval_limit=self.total_iteration_limit)
+        # update search history - using loop across all initialization data
+        self.search_history = []
+        self.current_iteration += x_init.shape[0]
+        for i in range(0, self.current_iteration):
+            current_data = SearchIterationData(x_init[i].unsqueeze(-1), y_init[i].unsqueeze(-1),
+                                               acq_type='mcs', iter_num=i)
+            self.search_history.append(current_data)
         # set up global state
         print('Setting up global state')
         self.initialize_global_state(x_init, y_init)
@@ -168,6 +178,8 @@ class MultimodalExtremaSearch:
             y_new = self.obj_func(x_max)
             # update global state using new objective evaluation
             self.current_iteration += 1
+            current_data = SearchIterationData(x_max, y_new, acq_type='tead', iter_num=self.current_iteration)
+            self.search_history.append(current_data)
             self.global_state.x_global = torch.cat((self.global_state.x_global, x_max), 0)
             self.global_state.y_global = torch.cat((self.global_state.y_global, y_new), 0)
             self.update_extreme()
@@ -290,10 +302,15 @@ class MultimodalExtremaSearch:
         score_max_right, max_idx_right = torch.max(input=scores_right, dim=0, keepdim=True)
         # score_max_right, max_idx_right = torch.max(input=scores_right)
         x_max_right = x_cands_right[max_idx_right[0]]
-        # evaluate obj func
+        # evaluate obj func and record data
         y_new_left = self.obj_func(x_max_left)
+        self.current_iteration += 1
+        current_data = SearchIterationData(x_max_left, y_new_left, acq_type='tead', iter_num=self.current_iteration)
+        self.search_history.append(current_data)
         y_new_right = self.obj_func(x_max_right)
-        self.current_iteration += 2
+        self.current_iteration += 1
+        current_data = SearchIterationData(x_max_right, y_new_right, acq_type='tead', iter_num=self.current_iteration)
+        self.search_history.append(current_data)
         return x_max_left, y_new_left, x_max_right, y_new_right
 
     def update_extreme(self):
@@ -429,11 +446,6 @@ class MultimodalExtremaSearch:
                                               current_local_data, self.obj_func)
         current_node['presearch'] = local_pre_search
         local_pre_search.run_local_search('tead')
-        # update state for running turbo search - is this needed? Or is the object pointed to
-        # automatically based on the connection between the current_local_data object
-        # current_node['data'] = LocalSearchState(input_dim=1, local_bounds=self.x_bounds,
-        #                                       x_local=self.global_state.x_global,
-        #                                       y_local=self.global_state.y_global,)
         # run turbo points
         local_search = LocalExtremeSearch(self.max_local_evals, self.min_local_init_evals,
                                           current_local_data, self.obj_func)
