@@ -107,6 +107,7 @@ class LocalExtremeSearch:
     tr_bound_history: torch.Tensor = None
     search_history: list[SearchIterationData] = None
     iteration_tracker: int = None
+    iteration_limit: int = None
 
     def initialize_local_search(self):
         """Set up the local search object"""
@@ -116,11 +117,17 @@ class LocalExtremeSearch:
         self.search_history = []
         if self.iteration_tracker is None:
             self.iteration_tracker = 0
+        # check against iteration limit
+        iterations_available = 9999999
+        if self.iteration_limit is not None and self.iteration_tracker is not None:
+            iterations_available = self.iteration_limit - self.iteration_tracker
         # if not enough initial data points in local subdomain, sample more randomly todo: sobol or lhs, ndim
-        if x_initial.shape[0] < self.min_local_init_evals:
+        if x_initial.shape[0] < self.min_local_init_evals and iterations_available >= 1:
             # sample randomly in subdomain to get to min
             num_new = self.min_local_init_evals - x_initial.shape[0]
             print('Making ', num_new, ' mcs evaluations to start local search')
+            if self.iteration_limit is not None and self.iteration_tracker is not None:
+                num_new = min(num_new, abs(iterations_available))
             new_x = torch.rand(num_new, 1, device=device, dtype=dtype)
             local_x = new_x * (self.local_state.local_bounds[1] - self.local_state.local_bounds[0])  # todo: ndim
             local_x = local_x + self.local_state.local_bounds[0]
@@ -172,6 +179,11 @@ class LocalExtremeSearch:
                                                          self.local_state.y_local,
                                                          max(self.local_state.y_local)
                                                          )
+        # check iteration limit before starting search
+        if self.iteration_limit is not None and self.iteration_tracker is not None:
+            if self.iteration_tracker >= self.iteration_limit:
+                converged = True
+        # loop to run local search iterations
         while not converged and local_iter <= self.max_local_evals:
             # fit the gp model
             self.fit_local_model()
@@ -240,6 +252,9 @@ class LocalExtremeSearch:
             local_iter += 1
             if self.local_state.trust_region.restart_triggered:
                 converged = True
+            if self.iteration_limit is not None and self.iteration_tracker is not None:
+                if self.iteration_tracker >= self.iteration_limit:
+                    converged = True
         # exit local search and return results
         local_search_extreme_y, extreme_idx = torch.max(input=self.local_state.y_local, dim=0, keepdim=True)
         local_search_extreme_x = self.local_state.x_local[extreme_idx[0]]

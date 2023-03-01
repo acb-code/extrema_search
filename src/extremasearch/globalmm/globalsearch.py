@@ -98,6 +98,7 @@ class MultimodalExtremaSearch:
     tead_model_type: str = 'piecewise'
     num_tead_explore_evals: int = 5
     search_history: list[SearchIterationData] = None
+    converged: bool = False
 
     def initialize_global_state(self, x_init, y_init):
         """Set up the initial GlobalSearchState object"""
@@ -157,6 +158,8 @@ class MultimodalExtremaSearch:
             self.current_iteration += 1
         # set up global state
         print('Setting up global state')
+        if self.check_iteration_limit():
+            return
         self.initialize_global_state(x_init, y_init)
 
     def run_global_tead_exploration_evaluations(self):
@@ -193,6 +196,8 @@ class MultimodalExtremaSearch:
             self.fit_global_model_partitioned()
             tead_iter += 1
             print("Completed: TEAD exploration iteration")
+            if self.check_iteration_limit():
+                return
 
     def compute_global_preselect_scores(self):
         """Use global value algorithm to assign value to points across input space"""
@@ -313,6 +318,8 @@ class MultimodalExtremaSearch:
         current_data = SearchIterationData(x_max_left, y_new_left, acq_type='tead', iter_num=self.current_iteration)
         self.current_iteration += 1
         self.search_history.append(current_data)
+        if self.check_iteration_limit():
+            return x_max_left, y_new_left, None, None
         y_new_right = self.obj_func(x_max_right)
         current_data = SearchIterationData(x_max_right, y_new_right, acq_type='tead', iter_num=self.current_iteration)
         self.current_iteration += 1
@@ -372,10 +379,14 @@ class MultimodalExtremaSearch:
         x_max_left, y_new_left, x_max_right, y_new_right = self.evaluate_objective_at_split(node_to_split,
                                                                                             left_bound,
                                                                                             right_bound)
-        self.global_state.x_global = torch.cat((self.global_state.x_global, x_max_left), 0)
-        self.global_state.y_global = torch.cat((self.global_state.y_global, y_new_left), 0)
-        self.global_state.x_global = torch.cat((self.global_state.x_global, x_max_right), 0)
-        self.global_state.y_global = torch.cat((self.global_state.y_global, y_new_right), 0)
+        if x_max_right is not None:
+            self.global_state.x_global = torch.cat((self.global_state.x_global, x_max_left), 0)
+            self.global_state.y_global = torch.cat((self.global_state.y_global, y_new_left), 0)
+            self.global_state.x_global = torch.cat((self.global_state.x_global, x_max_right), 0)
+            self.global_state.y_global = torch.cat((self.global_state.y_global, y_new_right), 0)
+        else:
+            self.global_state.x_global = torch.cat((self.global_state.x_global, x_max_left), 0)
+            self.global_state.y_global = torch.cat((self.global_state.y_global, y_new_left), 0)
         # check if new data points change the best observed global extreme
         self.update_extreme()
 
@@ -501,16 +512,28 @@ class MultimodalExtremaSearch:
             self.fit_global_model()
             self.fit_global_model_partitioned()
             print('Exploring full space')
+            if self.check_iteration_limit():
+                break
             self.run_global_tead_exploration_evaluations()
             print('Calculating pre-select scores')
+            if self.check_iteration_limit():
+                break
             self.compute_global_preselect_scores()
             print('Calculating subdomain pre-select scores')
+            if self.check_iteration_limit():
+                break
             self.compute_subdomain_preselect_scores()
             print('Running partition')
+            if self.check_iteration_limit():
+                break
             self.run_global_partition_step()
             print('Running subdomain selection')
+            if self.check_iteration_limit():
+                break
             n_to_search = self.compute_global_select_scores()
             print('Running local search')
+            if self.check_iteration_limit():
+                break
             self.run_selected_local_search(n_to_search)
 
     def fit_global_model(self):
@@ -532,6 +555,13 @@ class MultimodalExtremaSearch:
                                                                  current_state.local_model)
             fit_gpytorch_mll(current_state.local_mll)
 
+    def check_iteration_limit(self):
+        """Check for whether iteration limit reached"""
+        if self.current_iteration >= self.total_iteration_limit:
+            self.converged = True
+            return True
+        else:
+            return False
 
 
 
