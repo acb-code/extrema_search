@@ -113,15 +113,20 @@ class MultimodalExtremaSearch:
         self.global_state.partition_graph.add_node(0, data=initial_local_data, search=initial_local_search)
         self.global_state.num_levels = 1
         # run initial local search
-        # self.global_state.partition_graph.nodes[0]['search'].run_local_search()  # use turbo
-        self.global_state.partition_graph.nodes[0]['search'].run_local_search(acq_type='tead')  # attempt with tead
+        self.global_state.partition_graph.nodes[0]['search'].iteration_tracker = self.current_iteration
+        local_history = self.global_state.partition_graph.nodes[0]['search'].run_local_search(acq_type='tead')  # tead
+        self.search_history.extend(local_history)
+        # print(self.current_iteration)
+        # print(' ', len(local_history))
+        self.current_iteration += len(local_history)
+        # print(self.current_iteration)
         # update global search state
         x_new = self.global_state.partition_graph.nodes[0]['search'].local_state.most_recent_x_local
         y_new = self.global_state.partition_graph.nodes[0]['search'].local_state.most_recent_y_local
         self.global_state.x_global = torch.cat((self.global_state.x_global, x_new), 0)
         self.global_state.y_global = torch.cat((self.global_state.y_global, y_new), 0)
         # initialize number of iterations so far for objective evaluations
-        self.current_iteration = self.global_state.x_global.shape[0]
+        # self.current_iteration = self.global_state.x_global.shape[0]
         # fit initial model
         self.global_state.global_mll, self.global_state.global_model = initialize_model(self.global_state.x_global,
                                                                                         self.global_state.y_global,
@@ -142,13 +147,14 @@ class MultimodalExtremaSearch:
         print('Collecting initial samples')
         x_init, y_init, best_y = generate_initial_data_with_function(self.obj_func, n=self.num_initial_samples,
                                                                      eval_limit=self.total_iteration_limit)
-        # update search history - using loop across all initialization data
+        # initialize search history and iteration tracking - using loop across all initialization data
         self.search_history = []
-        self.current_iteration += x_init.shape[0]
-        for i in range(0, self.current_iteration):
+        for i in range(0, x_init.shape[0]):
             current_data = SearchIterationData(x_init[i].unsqueeze(-1), y_init[i].unsqueeze(-1),
                                                acq_type='mcs', iter_num=i)
             self.search_history.append(current_data)
+            # print(self.current_iteration)
+            self.current_iteration += 1
         # set up global state
         print('Setting up global state')
         self.initialize_global_state(x_init, y_init)
@@ -177,9 +183,9 @@ class MultimodalExtremaSearch:
             x_max = x_candidates[max_idx[0]]
             y_new = self.obj_func(x_max)
             # update global state using new objective evaluation
-            self.current_iteration += 1
             current_data = SearchIterationData(x_max, y_new, acq_type='tead', iter_num=self.current_iteration)
             self.search_history.append(current_data)
+            self.current_iteration += 1
             self.global_state.x_global = torch.cat((self.global_state.x_global, x_max), 0)
             self.global_state.y_global = torch.cat((self.global_state.y_global, y_new), 0)
             self.update_extreme()
@@ -304,12 +310,12 @@ class MultimodalExtremaSearch:
         x_max_right = x_cands_right[max_idx_right[0]]
         # evaluate obj func and record data
         y_new_left = self.obj_func(x_max_left)
-        self.current_iteration += 1
         current_data = SearchIterationData(x_max_left, y_new_left, acq_type='tead', iter_num=self.current_iteration)
+        self.current_iteration += 1
         self.search_history.append(current_data)
         y_new_right = self.obj_func(x_max_right)
-        self.current_iteration += 1
         current_data = SearchIterationData(x_max_right, y_new_right, acq_type='tead', iter_num=self.current_iteration)
+        self.current_iteration += 1
         self.search_history.append(current_data)
         return x_max_left, y_new_left, x_max_right, y_new_right
 
@@ -445,19 +451,30 @@ class MultimodalExtremaSearch:
         local_pre_search = LocalExtremeSearch(num_initial_tead, self.min_local_init_evals,
                                               current_local_data, self.obj_func)
         current_node['presearch'] = local_pre_search
-        local_pre_search.run_local_search('tead')
+        local_pre_search.iteration_tracker = self.current_iteration
+        local_history = local_pre_search.run_local_search('tead')
+        self.search_history.extend(local_history)
+        # update global search state
+        x_new = local_pre_search.local_state.most_recent_x_local
+        y_new = local_pre_search.local_state.most_recent_y_local
+        self.current_iteration += int(x_new.shape[0])
+        print("LOCALSEARCH: Completed ", int(x_new.shape[0]), " new tead evaluations between ", torch.min(x_new).item(),
+              " and ", torch.max(x_new).item())
+        self.global_state.x_global = torch.cat((self.global_state.x_global, x_new), 0)
+        self.global_state.y_global = torch.cat((self.global_state.y_global, y_new), 0)
         # run turbo points
         local_search = LocalExtremeSearch(self.max_local_evals, self.min_local_init_evals,
                                           current_local_data, self.obj_func)
         current_node['search'] = local_search
         # run local search
-        # local_search.run_local_search()
-        local_search.run_local_search()
+        local_search.iteration_tracker = self.current_iteration
+        local_history = local_search.run_local_search()
+        self.search_history.extend(local_history)
         # update global search state
         x_new = current_node['search'].local_state.most_recent_x_local
         y_new = current_node['search'].local_state.most_recent_y_local
         self.current_iteration += int(x_new.shape[0])
-        print("LOCALSEARCH: Completed ", int(x_new.shape[0]), " new evaluations between ", torch.min(x_new).item(),
+        print("LOCALSEARCH: Completed ", int(x_new.shape[0]), " new turbo evaluations between ", torch.min(x_new).item(),
               " and ", torch.max(x_new).item())
         self.global_state.x_global = torch.cat((self.global_state.x_global, x_new), 0)
         self.global_state.y_global = torch.cat((self.global_state.y_global, y_new), 0)

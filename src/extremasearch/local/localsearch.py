@@ -113,10 +113,14 @@ class LocalExtremeSearch:
         # set up state object
         # check initial data
         x_initial = self.local_state.x_local
+        self.search_history = []
+        if self.iteration_tracker is None:
+            self.iteration_tracker = 0
         # if not enough initial data points in local subdomain, sample more randomly todo: sobol or lhs, ndim
         if x_initial.shape[0] < self.min_local_init_evals:
             # sample randomly in subdomain to get to min
             num_new = self.min_local_init_evals - x_initial.shape[0]
+            print('Making ', num_new, ' mcs evaluations to start local search')
             new_x = torch.rand(num_new, 1, device=device, dtype=dtype)
             local_x = new_x * (self.local_state.local_bounds[1] - self.local_state.local_bounds[0])  # todo: ndim
             local_x = local_x + self.local_state.local_bounds[0]
@@ -124,6 +128,11 @@ class LocalExtremeSearch:
             # update local data set
             self.local_state.x_local = torch.cat((self.local_state.x_local, local_x), 0)
             self.local_state.y_local = torch.cat((self.local_state.y_local, new_y), 0)
+            # update iteration data tracking
+            self.iteration_tracker += local_x.shape[0]
+            for i in range(0, self.iteration_tracker):
+                current_data = SearchIterationData(x=local_x, y=new_y, acq_type='mcs', iter_num=self.iteration_tracker)
+                self.search_history.append(current_data)
             # store new evaluations to add to global data set later
             self.local_state.most_recent_x_local = local_x
             self.local_state.most_recent_y_local = new_y
@@ -196,6 +205,10 @@ class LocalExtremeSearch:
             # local x,y values
             self.local_state.x_local = torch.cat((self.local_state.x_local, next_x), 0)
             self.local_state.y_local = torch.cat((self.local_state.y_local, next_y), 0)
+            # search history
+            current_data = SearchIterationData(x=next_x, y=next_y, acq_type=acq_type, iter_num=self.iteration_tracker)
+            self.search_history.append(current_data)
+            self.iteration_tracker += 1
             # new x,y values from this local search only
             if self.local_state.most_recent_x_local is not None:
                 self.local_state.most_recent_x_local = torch.cat((self.local_state.most_recent_x_local, next_x), 0)
@@ -232,6 +245,7 @@ class LocalExtremeSearch:
         local_search_extreme_x = self.local_state.x_local[extreme_idx[0]]
         self.local_state.x_local_extreme = local_search_extreme_x
         self.local_state.y_local_extreme = local_search_extreme_y
+        return self.search_history
 
     def fit_local_model(self):
         """Fit the local model"""
