@@ -19,7 +19,7 @@ from gpytorch.mlls import ExactMarginalLogLikelihood
 from extremasearch.acquisition.tead import *
 from typing import Callable
 from dataclasses import dataclass
-from extremasearch.local.localsearch import LocalSearchState, LocalExtremeSearch, initialize_model
+from extremasearch.local.localsearch import LocalSearchState, LocalExtremeSearch, initialize_model, SearchIterationData
 import networkx as nx
 from botorch.models.transforms import Normalize, Standardize
 
@@ -66,13 +66,13 @@ class GlobalSearchState:
     converged_extrema: list = None
 
 
-@dataclass
-class SearchIterationData:
-    """Holds data on each search iteration to simplify adding and accessing the data"""
-    x: torch.Tensor = None
-    y: torch.Tensor = None
-    acq_type: str = None
-    iter_num: int = None
+# @dataclass
+# class SearchIterationData:
+#     """Holds data on each search iteration to simplify adding and accessing the data"""
+#     x: torch.Tensor = None
+#     y: torch.Tensor = None
+#     acq_type: str = None
+#     iter_num: int = None
 
 
 @dataclass

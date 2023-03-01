@@ -88,6 +88,15 @@ def initialize_scaled_model(train_x, train_obj, state_dict=None):
 
 
 @dataclass
+class SearchIterationData:
+    """Holds data on each search iteration to simplify adding and accessing the data"""
+    x: torch.Tensor = None
+    y: torch.Tensor = None
+    acq_type: str = None
+    iter_num: int = None
+
+
+@dataclass
 class LocalExtremeSearch:
     """Runs the local search to update the local search state"""
     max_local_evals: int
@@ -96,6 +105,8 @@ class LocalExtremeSearch:
     objective_function: Callable = None
     length_history: torch.Tensor = None
     tr_bound_history: torch.Tensor = None
+    search_history: list[SearchIterationData] = None
+    iteration_tracker: int = None
 
     def initialize_local_search(self):
         """Set up the local search object"""
