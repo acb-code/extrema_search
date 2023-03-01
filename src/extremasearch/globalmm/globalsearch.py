@@ -108,6 +108,8 @@ class MultimodalExtremaSearch:
         y_new = self.global_state.partition_graph.nodes[0]['search'].local_state.most_recent_y_local
         self.global_state.x_global = torch.cat((self.global_state.x_global, x_new), 0)
         self.global_state.y_global = torch.cat((self.global_state.y_global, y_new), 0)
+        # number of iterations so far
+        self.current_iteration = self.global_state.x_global.shape[0]
         # fit initial model
         self.global_state.global_mll, self.global_state.global_model = initialize_model(self.global_state.x_global,
                                                                                         self.global_state.y_global,
@@ -180,13 +182,6 @@ class MultimodalExtremaSearch:
         current_penalty = self.get_penalty(x_candidates, x_tead_scores)
         self.global_state.tead_global_scores = x_tead_scores * current_penalty
 
-    # def get_candidates_and_scores_from_node(self, graph, n): # todo see if there's a function to create here
-    #     current_node = graph.nodes()[n]
-    #     current_state = current_node['data']
-    #     current_bounds = current_state.local_bounds
-    #     mask_cands = torch.ge(x_cands, current_bounds[0]) & torch.lt(x_cands, current_bounds[1])
-    #     current_cands = x_cands[mask_cands].unsqueeze(-1)
-    #     current_scores = x_cand_scores[mask_cands].unsqueeze(-1)
     def compute_subdomain_preselect_scores(self):
         """Determine the per-leaf-node pre-select score data and assign to nodes"""
         # get leaf nodes in graph
@@ -498,35 +493,7 @@ class MultimodalExtremaSearch:
                                                                  current_state.local_model)
             fit_gpytorch_mll(current_state.local_mll)
 
-    def get_bounds_of_leaves(self):
-        """Get the (node, bounds) pairs"""
-        graph = self.global_state.partition_graph
-        graph_leaves = [n for n in graph if graph.out_degree[n] == 0]
-        bound_list = []
-        node_list = []
-        for n in graph_leaves:
-            # get current leaf node
-            current_node = graph.nodes()[n]
-            current_state = current_node['data']
-            current_bounds = current_state.local_bounds
-            node_list.append(n)
-            bound_list.append(current_bounds)
-        return node_list, bound_list
 
-    # moved to tead module
-    # def get_model_from_piecewise_set(self, x):
-    #     """Retrieves the local model from the piecewise set at the input point x"""
-    #     graph = self.global_state.partition_graph
-    #     graph_leaves = [n for n in graph if graph.out_degree[n] == 0]
-    #     for n in graph_leaves:
-    #         # get current leaf node
-    #         current_node = graph.nodes()[n]
-    #         current_state = current_node['data']
-    #         current_bounds = current_state.local_bounds
-    #         if current_bounds[0] <= x < current_bounds[1]:
-    #             return current_state.local_model
-    #     print("Using single global model")
-    #     return self.global_state.global_model
 
 
 
