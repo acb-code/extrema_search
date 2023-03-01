@@ -108,7 +108,7 @@ class MultimodalExtremaSearch:
         y_new = self.global_state.partition_graph.nodes[0]['search'].local_state.most_recent_y_local
         self.global_state.x_global = torch.cat((self.global_state.x_global, x_new), 0)
         self.global_state.y_global = torch.cat((self.global_state.y_global, y_new), 0)
-        # number of iterations so far
+        # initialize number of iterations so far for objective evaluations
         self.current_iteration = self.global_state.x_global.shape[0]
         # fit initial model
         self.global_state.global_mll, self.global_state.global_model = initialize_model(self.global_state.x_global,
