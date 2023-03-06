@@ -95,19 +95,19 @@ def nfinite_diff(model):
     """get approx gradient at model training points"""
     # assumes 1d input... see implementation in [3] for update to n-D
     h = 1e-4
-    x = model.train_inputs[0].squeeze()
-    m = len(x)
-    delta_s = torch.zeros(m)
-    for i in range(0, m):
-        x_lo = x[i] - h
-        if x_lo < 0.0:
-            x_lo = torch.DoubleTensor([0.0])
-        x_hi = x[i] + h
-        if x_hi > 1.0:
-            x_hi = torch.DoubleTensor([1.0])
-        y_lo = model(x_lo.unsqueeze(-1)).mean
-        y_hi = model(x_hi.unsqueeze(-1)).mean
-        delta_s[i] = (y_hi - y_lo)/(2*h)
+    x = model.train_inputs[0]
+    num_data = x.shape[0]
+    num_dim = x.shape[1]
+    delta_s = torch.zeros(num_data, num_dim)
+    for i in range(0, num_data):
+        for j in range(0, num_dim):
+            dx = torch.zeros(1, num_dim)
+            dx[:,j] = h  # set the dimension for the gradient to have a step
+            x_lo = x[i] - dx  # element-wise subtract
+            x_hi = x[i] + dx  # element-wise addition
+            y_lo = model(x_lo.unsqueeze(0)).mean  # unsqueeze to match model syntax
+            y_hi = model(x_hi.unsqueeze(0)).mean  # unsqueeze to match model syntax
+            delta_s[i, j] = (y_hi - y_lo)/(2*h)
     return delta_s
 
 
