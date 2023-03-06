@@ -157,6 +157,7 @@ def nglobal_tead(model: SingleTaskGP, get_all_candidates: bool = False):
     # this part is expensive to compute... all the model() calls? - this is where the qTEAD approach may have value
     for i in range(num_cands):
         g = x_train[inds[i]].squeeze() - cands[i]
+        g = g.type_as(grads[inds[i]].squeeze())
         t[i] = y_train[inds[i]].squeeze() + torch.dot(grads[inds[i]].squeeze(), g)
         s[i] = model(cands[i].unsqueeze(0)).mean
         res[i] = torch.norm(s[i, 0] - t[i, 0])
@@ -167,7 +168,7 @@ def nglobal_tead(model: SingleTaskGP, get_all_candidates: bool = False):
     if get_all_candidates:
         return cands, j
     else:
-        return cands[torch.argmax(j)].unsqueeze(-1)
+        return cands[torch.argmax(j)].unsqueeze(0)
 
 
 
