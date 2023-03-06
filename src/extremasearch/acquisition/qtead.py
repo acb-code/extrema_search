@@ -30,7 +30,7 @@
 
 # original tead imports
 import torch
-from botorch.models.gp_regression import ExactGP
+from botorch.models import SingleTaskGP
 from scipy.stats.qmc import LatinHypercube
 from sklearn.neighbors import NearestNeighbors
 import numpy as np
@@ -111,19 +111,20 @@ def nfinite_diff(model):
     return delta_s
 
 
-def nknn(ref, query, k=1):
-    """Function to wrap KNN from sklearn for TEAD setup
-    assumes 1d input dimension, torch Tensors, ref is training inputs
-    query is candidate points, k is number of neighbors
-    """
-    knn_ex = NearestNeighbors(n_neighbors=k).fit(ref.squeeze().numpy().reshape(-1, 1))
-    dists, indices = knn_ex.kneighbors(query.squeeze().numpy().reshape(-1, 1))
-    return dists, indices
+# def nknn(ref, query, k=1):
+#     """Function to wrap KNN from sklearn for TEAD setup
+#     assumes 1d input dimension, torch Tensors, ref is training inputs
+#     query is candidate points, k is number of neighbors
+#     """
+#     knn_ex = NearestNeighbors(n_neighbors=k).fit(ref.squeeze().numpy().reshape(-1, 1))
+#     dists, indices = knn_ex.kneighbors(query.squeeze().numpy().reshape(-1, 1))
+#     return dists, indices
 
 
-def nglobal_tead(model: ExactGP, get_all_candidates: bool = False):
+def nglobal_tead(model: SingleTaskGP, get_all_candidates: bool = False):
     """Function version of initial implementation TEAD adaptive sampling algorithm
-        Returns candidates and scores, not just final argmax score"""
+        Returns candidates and scores, not just final argmax score
+        Assumes output dimension=1"""
     # get training set from model - assuming format expected from ExactGP here
     x_train = model.train_inputs[0].squeeze()
     y_train = model.train_targets
@@ -131,31 +132,37 @@ def nglobal_tead(model: ExactGP, get_all_candidates: bool = False):
     grads = nfinite_diff(model)
     # (this may be available through torch built in behavior, but no time now
     # generate potential input candidates using LHC samples
-    lhs_sampler = LatinHypercube(d=1)
+    lhs_sampler = LatinHypercube(d=x_train.shape[1])
     num_cands = 2000
     cands = torch.from_numpy(lhs_sampler.random(n=num_cands))
     # calculate nearest neighbors pairings for the candidates
-    dists, inds = nknn(x_train, cands)
+    # dists, inds = nknn(x_train, cands)
+    nn = NearestNeighbors(n_neighbors=1).fit(x_train)
+    # convert back to torch tensors after using np for sklearn NN and scipy lhs samples
+    dists, inds = nn.kneighbors(cands)
+    dists = torch.tensor(dists)
+    inds = torch.tensor(inds)
     # calculate the weighting
     sample_dists = []
-    vals = x_train.numpy()
+    vals = x_train
     for i in range(len(vals)):
         for j in range(len(vals)):
-            sample_dists.append(np.linalg.norm(vals[i]-vals[j]))
+            sample_dists.append(torch.linalg.norm(vals[i] - vals[j]))
     lmax = max(sample_dists)
-    w = torch.ones(num_cands, 1, dtype=dtype) - dists/lmax
+    w = torch.ones(num_cands, 1, dtype=dtype) - dists / lmax
     # do taylor series expansions
     t = torch.zeros(num_cands, 1, dtype=dtype)
     s = torch.zeros(num_cands, 1, dtype=dtype)
     res = torch.zeros(num_cands, 1, dtype=dtype)
+    # this part is expensive to compute... all the model() calls? - this is where the qTEAD approach may have value
     for i in range(num_cands):
-        g = x_train[inds[i]] - cands[i]
-        t[i, 0] = y_train[inds[i]] + grads[inds[i]]*g
-        s[i, 0] = model(cands[i]).mean
-        res[i, 0] = torch.norm(s[i, 0] - t[i, 0])
+        g = x_train[inds[i]].squeeze() - cands[i]
+        t[i] = y_train[inds[i]].squeeze() + torch.dot(grads[inds[i]].squeeze(), g)
+        s[i] = model(cands[i].unsqueeze(0)).mean
+        res[i] = torch.norm(s[i, 0] - t[i, 0])
 
     # compute score
-    j = torch.from_numpy(dists/max(dists)) + w * (res / max(res))
+    j = (dists / max(dists)) + w * (res / max(res))
     # pick point with max score
     if get_all_candidates:
         return cands, j
