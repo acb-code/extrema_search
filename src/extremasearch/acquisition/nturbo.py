@@ -1,7 +1,7 @@
 # setting up n-dim version of turbo based on BoTorch setup combined with modifications from 1-d case
 #
 # Author: Alex Braafladt
-# Date: 3/13/2023
+# Date: 3/13/2023 v1
 #
 # TuRBO references:
 #   [1] D. Eriksson, M. Pearce, J. R. Gardner, R. Turner, and M. Poloczek, “Scalable global optimization via local
