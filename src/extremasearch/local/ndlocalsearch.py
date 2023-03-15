@@ -20,8 +20,8 @@ from botorch import fit_gpytorch_mll
 from botorch.optim import optimize_acqf
 from botorch.models.gp_regression import SingleTaskGP
 from gpytorch.mlls import ExactMarginalLogLikelihood
-from extremasearch.acquisition.turbo import *
-from extremasearch.acquisition.tead import *
+# from extremasearch.acquisition.turbo import *
+# from extremasearch.acquisition.tead import *
 from typing import Callable
 from botorch.sampling import SobolQMCNormalSampler
 from botorch.models.transforms import Normalize, Standardize
@@ -103,18 +103,20 @@ class SearchIterationData:
 
 
 @dataclass
-class LocalExtremeSearch:
+class NdLocalExtremeSearch:
     """Runs the local search to update the local search state"""
     max_local_evals: int
     min_local_init_evals: int
     local_state: NdLocalSearchState
     dim: int
+    partition_length: torch.tensor = torch.tensor(1.0, dtype=dtype)
     objective_function: Callable = None
     length_history: torch.Tensor = None
     # tr_bound_history: torch.Tensor = None
     search_history: list[SearchIterationData] = None
     iteration_tracker: int = None
     iteration_limit: int = None
+    batch_size: int = 1
 
     def initialize_local_search(self):
         """Set up the local search object"""
@@ -136,8 +138,8 @@ class LocalExtremeSearch:
             if self.iteration_limit is not None and self.iteration_tracker is not None:
                 num_new = min(num_new, abs(iterations_available))
             new_x = torch.rand(num_new, self.dim, device=device, dtype=dtype)
-            local_x = new_x * (self.local_state.local_bounds[1] - self.local_state.local_bounds[0])  # todo: ndim
-            local_x = local_x + self.local_state.local_bounds[0]
+            local_x = new_x * (self.local_state.local_bounds[1] - self.local_state.local_bounds[0])  # apply range
+            local_x = local_x + self.local_state.local_bounds[0]  # apply floor
             new_y = self.objective_function(local_x)
             # update local data set
             self.local_state.x_local = torch.cat((self.local_state.x_local, local_x), 0)
@@ -147,7 +149,7 @@ class LocalExtremeSearch:
             for i in range(0, self.iteration_tracker):
                 current_data = SearchIterationData(x=local_x, y=new_y, acq_type='mcs', iter_num=self.iteration_tracker)
                 self.search_history.append(current_data)
-            # store new evaluations to add to global data set later
+            # store new evaluations to add to global data set later, overwriting any previous
             self.local_state.most_recent_x_local = local_x
             self.local_state.most_recent_y_local = new_y
         else:
@@ -157,7 +159,6 @@ class LocalExtremeSearch:
         # initialize gp model
         gp_x = self.local_state.x_local
         gp_y = self.local_state.y_local
-        # self.local_state.local_mll, self.local_state.local_model = initialize_model(gp_x, gp_y, None)
         self.local_state.local_mll, self.local_state.local_model = initialize_scaled_model(gp_x, gp_y, None)
 
     def run_local_search(self, acq_type: str = 'turbo'):
@@ -168,24 +169,22 @@ class LocalExtremeSearch:
         converged = False
         local_iter = 0
         # initialize turbo trust region
-        # self.local_state.trust_region = NewTurboState(dim=1, batch_size=1, center=0.5, lb=0.0, ub=1.0)
-        # trying setting the bounds to constrain the turbo search to the selected subdomain
-        self.local_state.trust_region = NewTurboState(dim=1,
-                                                      batch_size=1,
-                                                      center=torch.tensor([0.5], dtype=dtype),
-                                                      lb=self.local_state.local_bounds[0],
-                                                      ub=self.local_state.local_bounds[1],
-                                                      length=0.25*(self.local_state.local_bounds[1] -
-                                                                   self.local_state.local_bounds[0]),
-                                                      domain_constraints=self.local_state.local_bounds,
-                                                      length_max=0.5*(self.local_state.local_bounds[1] -
-                                                                      self.local_state.local_bounds[0])
-                                                      )
-        self.local_state.trust_region = new_update_state(self.local_state.trust_region,
-                                                         self.local_state.x_local,
-                                                         self.local_state.y_local,
-                                                         max(self.local_state.y_local)
-                                                         )
+        # setting the bounds to constrain the turbo search to the selected subdomain
+        x_cur_center = self.local_state.x_local[self.local_state.y_local.argmax(), :].clone()
+        self.local_state.trust_region = NdTurboState(dim=self.dim,
+                                                     batch_size=self.batch_size,
+                                                     center=x_cur_center,
+                                                     lb=self.local_state.local_bounds[0],
+                                                     ub=self.local_state.local_bounds[1],
+                                                     length=0.25*self.partition_length,
+                                                     domain_constraints=self.local_state.local_bounds,
+                                                     length_max=0.5*self.partition_length
+                                                     )
+        self.local_state.trust_region = nd_new_update_state(self.local_state.trust_region,
+                                                            self.local_state.x_local,
+                                                            self.local_state.y_local,
+                                                            self.local_state.y_local.max()
+                                                            )
         # check iteration limit before starting search
         if self.iteration_limit is not None and self.iteration_tracker is not None:
             if self.iteration_tracker >= self.iteration_limit:
@@ -196,19 +195,20 @@ class LocalExtremeSearch:
             self.fit_local_model()
             # run the acquisition function
             if acq_type == 'turbo':
-                next_x = generate_batch(state=self.local_state.trust_region,
-                                        model=self.local_state.local_model,
-                                        x=self.local_state.x_local,
-                                        y=self.local_state.y_local,
-                                        batch_size=1,
-                                        n_candidates=N_CANDIDATES,
-                                        num_restarts=NUM_RESTARTS,
-                                        raw_samples=RAW_SAMPLES,
-                                        acqf='ts',
-                                        )
+                next_x = ngenerate_batch(state=self.local_state.trust_region,
+                                         model=self.local_state.local_model,
+                                         dim=self.dim,
+                                         x=self.local_state.x_local,
+                                         y=self.local_state.y_local,
+                                         batch_size=self.batch_size,
+                                         n_candidates=N_CANDIDATES,
+                                         num_restarts=NUM_RESTARTS,
+                                         raw_samples=RAW_SAMPLES,
+                                         acqf='ts',
+                                         )
                 print('turbo')
             elif acq_type == 'tead':
-                next_x = global_tead(self.local_state.local_model)
+                next_x = nglobal_tead(self.local_state.local_model)
                 print('tead')
             elif acq_type == 'nei':
                 qmc_sampler = SobolQMCNormalSampler(MC_SAMPLES)
@@ -216,7 +216,7 @@ class LocalExtremeSearch:
                                                  X_baseline=self.local_state.x_local,
                                                  sampler=qmc_sampler,
                                                  )
-                next_x = optimize_acqf_and_get_next_x(qNEI)
+                next_x = noptimize_acqf_and_get_next_x(qNEI, self.local_state.local_bounds)
             else:
                 print('Error: unknown acquisition function for local search')
             next_y = self.objective_function(next_x)
@@ -237,24 +237,27 @@ class LocalExtremeSearch:
                 self.local_state.most_recent_y_local = next_y
             # update trust region
             # print(max(self.local_state.y_local))
-            self.local_state.trust_region = new_update_state(self.local_state.trust_region,
-                                                             x_train=self.local_state.x_local,
-                                                             y_train=self.local_state.y_local,
-                                                             y_next=max(self.local_state.y_local)
-                                                             )
+            self.local_state.trust_region = nd_new_update_state(self.local_state.trust_region,
+                                                                x_train=self.local_state.x_local,
+                                                                y_train=self.local_state.y_local,
+                                                                y_next=self.local_state.y_local.max()
+                                                                )
             # update local model - using only local training samples inside the updated trust region
             x_in_region, y_in_region = self.local_state.trust_region.get_training_samples_in_region()
             if acq_type == 'turbo':
-                self.local_state.local_mll, self.local_state.local_model = initialize_scaled_model(x_in_region,
-                                                                                                   y_in_region, None)
+                self.local_state.local_mll, \
+                    self.local_state.local_model = initialize_scaled_model(x_in_region,
+                                                                           y_in_region, None)
             elif acq_type == 'tead':
-                self.local_state.local_mll, self.local_state.local_model = initialize_scaled_model(self.local_state.x_local,
-                                                                                            self.local_state.y_local,
-                                                                                            None)
+                self.local_state.local_mll, \
+                    self.local_state.local_model = initialize_scaled_model(self.local_state.x_local,
+                                                                           self.local_state.y_local,
+                                                                           None)
             else:
-                self.local_state.local_mll, self.local_state.local_model = initialize_scaled_model(self.local_state.x_local,
-                                                                                            self.local_state.y_local,
-                                                                                            None)
+                self.local_state.local_mll, \
+                    self.local_state.local_model = initialize_scaled_model(self.local_state.x_local,
+                                                                           self.local_state.y_local,
+                                                                           None)
                 print('Error: unknown acquisition function for local search')
             local_iter += 1
             if self.local_state.trust_region.restart_triggered:
@@ -263,8 +266,9 @@ class LocalExtremeSearch:
                 if self.iteration_tracker >= self.iteration_limit:
                     converged = True
         # exit local search and return results
-        local_search_extreme_y, extreme_idx = torch.max(input=self.local_state.y_local, dim=0, keepdim=True)
-        local_search_extreme_x = self.local_state.x_local[extreme_idx[0]]
+        local_search_extreme_y = self.local_state.y_local.max()
+        extreme_idx = self.local_state.y_local.argmax()
+        local_search_extreme_x = self.local_state.x_local[extreme_idx]
         self.local_state.x_local_extreme = local_search_extreme_x
         self.local_state.y_local_extreme = local_search_extreme_y
         return self.search_history
