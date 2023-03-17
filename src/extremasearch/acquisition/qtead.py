@@ -171,7 +171,119 @@ def nglobal_tead(model: SingleTaskGP, get_all_candidates: bool = False):
         return cands[torch.argmax(j)].unsqueeze(0)
 
 
+def nd_get_model_from_piecewise_set(graph, x):
+    """Retrieves the local model from the piecewise set at the input point x"""
+    # condition x to clamp to limits of [0.0, 1.0) as in problem setup
+    idx_hi = torch.where(x >= 1.0, True, False)
+    x[idx_hi] = 0.999999
+    idx_lo = torch.where(x < 0.0, True, False)
+    x[idx_lo] = 0.0
+    # now search through leaves of graph to get node where x in bounds and then return that model
+    graph_leaves = [n for n in graph if graph.out_degree[n] == 0]
+    for n in graph_leaves:
+        # get current leaf node
+        current_node = graph.nodes()[n]
+        current_state = current_node['data']
+        current_bounds = current_state.local_bounds
+        # # save the lowest node index and highest node index for edge cases
+        # if current_bounds[0] <= 0.001 or current_bounds[1] <= 0.001:
+        #     low_node = n
+        # if current_bounds[1] >= 0.999 or current_bounds[0] >= 0.999:
+        #     high_node = n
+        # check if current node is the right one to use for model
+        # old
+        # if current_bounds[0] <= x < current_bounds[1]:
+        #     return current_state.local_model
+        #
+        # new
+        idx_ub = torch.where(x < current_bounds[1], True, False)
+        idx_lb = torch.where(x >= current_bounds[0], True, False)
+        idx_both = idx_lb & idx_ub
+        if torch.all(idx_both):
+            return current_state.local_model
+        #
 
+    # # handle slightly off bound queries
+    # if x < 0.0:
+    #     # if a prediction lower than 0.0 needed
+    #     return graph.nodes()[low_node]['data'].local_model
+    # elif x >= 1.0:
+    #     # if a prediction higher than 1.0 needed
+    #     return graph.nodes()[high_node]['data'].local_model
+    print("Model lookup failed")
+
+
+def nfinite_diff_piecewise(x_all, graph):
+    """get approx gradient at model training points"""
+    # assumes 1d input... see implementation in [3] for update to n-D
+    h = 1e-4
+    x = x_all.squeeze()
+    num_data = x.shape[0]
+    num_dim = x.shape[1]
+    delta_s = torch.zeros(num_data, num_dim)
+    for i in range(0, num_data):
+        for j in range(0, num_dim):
+            dx = torch.zeros(1, num_dim)
+            dx[:,j] = h  # set the dimension for the gradient to have a step
+            x_lo = x[i] - dx  # element-wise subtract
+            x_hi = x[i] + dx  # element-wise addition
+            model_lo = nd_get_model_from_piecewise_set(graph, x_lo.unsqueeze(0))
+            y_lo = model_lo(x_lo.unsqueeze(0)).mean  # unsqueeze to match model syntax
+            model_hi = nd_get_model_from_piecewise_set(graph, x_hi.unsqueeze(0))
+            y_hi = model_hi(x_hi.unsqueeze(0)).mean  # unsqueeze to match model syntax
+            delta_s[i, j] = (y_hi - y_lo)/(2*h)
+    return delta_s
+
+
+def npiecewise_tead(x_all, y_all, graph, get_all_candidates: bool = False):
+    """Function version of initial implementation TEAD adaptive sampling algorithm
+        Returns candidates and scores, not just final argmax score
+        Assumes output dimension=1"""
+    # get training set from model - assuming format expected from ExactGP here
+    x_train = x_all.squeeze()
+    y_train = y_all
+    # calculate gradient at each training point using finite difference
+    grads = nfinite_diff_piecewise(x_train, graph)
+    # (this may be available through torch built in behavior, but no time now
+    # generate potential input candidates using LHC samples
+    lhs_sampler = LatinHypercube(d=x_train.shape[1])
+    num_cands = 2000
+    cands = torch.from_numpy(lhs_sampler.random(n=num_cands))
+    # calculate nearest neighbors pairings for the candidates
+    # dists, inds = nknn(x_train, cands)
+    nn = NearestNeighbors(n_neighbors=1).fit(x_train)
+    # convert back to torch tensors after using np for sklearn NN and scipy lhs samples
+    dists, inds = nn.kneighbors(cands)
+    dists = torch.tensor(dists)
+    inds = torch.tensor(inds)
+    # calculate the weighting
+    sample_dists = []
+    vals = x_train
+    for i in range(len(vals)):
+        for j in range(len(vals)):
+            sample_dists.append(torch.linalg.norm(vals[i] - vals[j]))
+    lmax = max(sample_dists)
+    w = torch.ones(num_cands, 1, dtype=dtype) - dists / lmax
+    # do taylor series expansions
+    t = torch.zeros(num_cands, 1, dtype=dtype)
+    s = torch.zeros(num_cands, 1, dtype=dtype)
+    res = torch.zeros(num_cands, 1, dtype=dtype)
+    # this part is expensive to compute... all the model() calls? - this is where the qTEAD approach may have value
+    for i in range(num_cands):
+        g = x_train[inds[i]].squeeze() - cands[i]
+        g = g.type_as(grads[inds[i]].squeeze())
+        t[i] = y_train[inds[i]].squeeze() + torch.dot(grads[inds[i]].squeeze(), g)
+        cur_model = nd_get_model_from_piecewise_set(graph, cands[i])
+        s[i] = cur_model(cands[i].unsqueeze(0)).mean
+        res[i] = torch.norm(s[i, 0] - t[i, 0])
+
+    # compute score
+    j = (dists / max(dists)) + w * (res / max(res))
+    # pick point with max score
+    if get_all_candidates:
+        return cands, j
+    else:
+        return cands[torch.argmax(j)].unsqueeze(0)
 
 
 
