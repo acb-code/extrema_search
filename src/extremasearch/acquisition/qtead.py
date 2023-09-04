@@ -36,14 +36,20 @@ from sklearn.neighbors import NearestNeighbors
 import numpy as np
 
 # imports for BoTorch MCAcquisitionFunction custom setup as in [7]
-from typing import Optional
+from typing import Optional, Any
 
 from botorch.acquisition.monte_carlo import MCAcquisitionFunction
 from botorch.models.model import Model
 from botorch.sampling.base import MCSampler
 from botorch.sampling.normal import SobolQMCNormalSampler
 from botorch.utils import t_batch_mode_transform
+from botorch.utils.transforms import concatenate_pending_points
 from torch import Tensor
+from botorch.acquisition.objective import (
+    IdentityMCObjective,
+    MCAcquisitionObjective,
+    PosteriorTransform,
+)
 
 
 class qTaylorExpansionBasedAdaptiveDesign(MCAcquisitionFunction):
@@ -51,13 +57,27 @@ class qTaylorExpansionBasedAdaptiveDesign(MCAcquisitionFunction):
             self,
             model: Model,
             sampler: Optional[MCSampler] = None,
+            objective: Optional[MCAcquisitionObjective] = None,
+            posterior_transform: Optional[PosteriorTransform] = None,
+            X_pending: Optional[Tensor] = None,
+            **kwargs: Any,
     ) -> None:
-        """Using the basic setup from [7] - global model"""
-        super(MCAcquisitionFunction, self).__init__(model=model)
+        """q-Taylor Expansion-Based Adaptive Design
+            Using the basic setup from [7] - global model
+            Args:
+                model: a fitted model.
+                num_lhs_draws: number of lhs draws to do in TEAD
+        """
+        super(MCAcquisitionFunction, self).__init__(model=model,
+                                                    objective=objective,
+                                                    posterior_transform=posterior_transform,
+                                                    X_pending=X_pending,
+                                                    )
         if sampler is None:
             sampler = SobolQMCNormalSampler(sample_shape=torch.Size([512]))
         self.sampler = sampler
 
+    @concatenate_pending_points
     @t_batch_mode_transform()
     def forward(self, X: Tensor) -> Tensor:
         """Evaluate the qTEAD on the candidate set `X`.
@@ -74,8 +94,21 @@ class qTaylorExpansionBasedAdaptiveDesign(MCAcquisitionFunction):
             Tensor: A `(b)`-dim Tensor of Taylor Expansion-Based Adaptive Design
             values at the given design points `X`={x1, x2, ..., xq}
         """
-        posterior = self.model.posterior(X)
+        posterior = self.model.posterior(X=X,
+            posterior_transform=self.posterior_transform
+        )
         samples = self.get_posterior_samples(posterior)  # n x b x q x o
+        obj = self.objective(samples, X=X)
+        # now use obj(samples) as the mean/mu would be used in acq func (will
+        # average over samples later to convert sample realizations to approx. mean)
+        # TEAD math replacing model.mean with obj
+        #   model.mean -> obj
+        #   model.train_inputs[0] -> model.train_inputs[0] (.squeeze()?)
+        #   model.train_targets -> model.train_targets
+        #   getting grads at train_inputs shouldn't be too expensive, maybe there
+        #   is a way to do MC-finite difference?
+
+
         mean = posterior.mean  # b x q x o
         # TEAD calculations
         # finite diff gradient estimate at {x, y} data points - could be external, doesn't change as x_c change
@@ -93,7 +126,7 @@ dtype = torch.double
 # objects
 def nfinite_diff(model):
     """get approx gradient at model training points"""
-    # assumes 1d input... see implementation in [3] for update to n-D
+    # assumes 1d output... see implementation in [3] for update to n-D
     h = 1e-4
     x = model.train_inputs[0]
     num_data = x.shape[0]

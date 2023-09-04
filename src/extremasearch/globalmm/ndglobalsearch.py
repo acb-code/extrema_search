@@ -243,6 +243,7 @@ class MultimodalExtremaSearch:
             idx_both = idx_lb & idx_ub
             current_cands = x_cands[torch.all(idx_both, dim=1), :]
             current_scores = x_cand_scores[torch.all(idx_both, dim=1)]
+            # todo add logic here to account for cases where no candidates are in the leaf bounds
             tead_max_score = current_scores.max()  # may need to squeeze or unsqueeze?
             #
             current_ave_score = current_scores.mean()
